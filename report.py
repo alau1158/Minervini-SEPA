@@ -108,7 +108,7 @@ class ReportGenerator:
                     <td>{self.format_price(holding.price)}</td>
                     <td class="{price_class}">{self.format_pct(holding.change_pct)}</td>
                     <td>{holding.rs_rating:.0f}</td>
-                    <td>{holding.trend_score}/6</td>
+                    <td>{holding.trend_score}/8</td>
                     <td class="{status_class}">{status}</td>
                     <td>{action}</td>
                 </tr>
@@ -137,7 +137,7 @@ class ReportGenerator:
                     <td><strong>{opp.symbol}</strong><br><small>{opp.name}</small></td>
                     <td>{self.format_price(opp.price)}</td>
                     <td>{opp.rs_rating:.0f}</td>
-                    <td>{opp.trend_score}/6</td>
+                    <td>{opp.trend_score}/8</td>
                     <td>{', '.join(opp.signals[:2])}</td>
                 </tr>
                 """
@@ -148,12 +148,12 @@ class ReportGenerator:
         html += """
             <h2>Understanding the Report</h2>
             <ul>
-                <li><strong>RS Rating:</strong> Relative strength vs S&P 500 (0-100, higher is better)</li>
-                <li><strong>Trend Score:</strong> Minervini template checks passed (0-6)</li>
-                <li><strong>OPTIMAL:</strong> Stock meets all Minervini criteria - strong buy</li>
-                <li><strong>GOOD:</strong> Most criteria met - hold position</li>
-                <li><strong>WEAK:</strong> Losing momentum - review position</li>
-                <li><strong>SELL/WATCH:</strong> No longer meets criteria - consider selling</li>
+                <li><strong>RS Rating:</strong> Weighted relative strength vs S&P 500 (0-100, higher is better)</li>
+                <li><strong>Trend Score:</strong> Minervini template checks passed (0-8)</li>
+                <li><strong>OPTIMAL:</strong> Stock meets ALL 8 Minervini trend criteria + fundamentals</li>
+                <li><strong>GOOD:</strong> Most criteria met (6+/8) - hold position</li>
+                <li><strong>WEAK:</strong> Losing momentum (4-5/8) - review position</li>
+                <li><strong>SELL/WATCH:</strong> No longer meets core criteria (<4/8) - consider selling</li>
             </ul>
             
             <p style="margin-top: 30px; color: #7f8c8d; font-size: 12px;">
