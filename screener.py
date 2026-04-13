@@ -175,15 +175,29 @@ class MinerviniScreener:
         results.sort(key=lambda x: x.overall_score, reverse=True)
         return results
     
+    def _get_sp500_symbols(self) -> List[str]:
+        try:
+            import requests
+            from io import StringIO
+            url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+            response = requests.get(url, timeout=10, headers=headers)
+            dfs = pd.read_html(StringIO(response.text))
+            df = dfs[0]
+            symbols = df['Symbol'].str.replace('.', '-', regex=False).tolist()
+            return symbols
+        except Exception as e:
+            logger.warning(f"Failed to fetch S&P 500 list: {e}, using fallback")
+            return [
+                'AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA', 'UNH', 'JNJ',
+                'V', 'XOM', 'JPM', 'PG', 'MA', 'HD', 'CVX', 'LLY', 'ABBV', 'MRK',
+                'AVGO', 'PEP', 'COST', 'KO', 'TMO', 'MCD', 'CSCO', 'ACN', 'WMT', 'DIS'
+            ]
+    
     def find_top_opportunities(self, minervini_pass_only: bool = True, limit: int = 10) -> List[StockAnalysis]:
-        popular_stocks = [
-            'AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA', 'BRK.B', 'UNH', 'JNJ',
-            'V', 'XOM', 'JPM', 'PG', 'MA', 'HD', 'CVX', 'LLY', 'ABBV', 'MRK',
-            'AVGO', 'PEP', 'COST', 'KO', 'TMO', 'MCD', 'CSCO', 'ACN', 'WMT', 'DIS',
-            'ABT', 'DHR', 'NEE', 'ADBE', 'TXN', 'NKE', 'PM', 'MS', 'UNP', 'RTX',
-            'ORCL', 'HON', 'IBM', 'CAT', 'BA', 'GE', 'AMD', 'INTC', 'QCOM', 'SBUX',
-            'CRM', 'NOW', 'INTU', 'AMAT', 'BKNG', 'ISRG', 'GILD', 'ADP', 'MDLZ', 'TGT'
-        ]
+        logger.info("Fetching S&P 500 symbols...")
+        popular_stocks = self._get_sp500_symbols()
+        logger.info(f"Loaded {len(popular_stocks)} S&P 500 stocks")
         
         results = self.screen_candidates(popular_stocks)
         
