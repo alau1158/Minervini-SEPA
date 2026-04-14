@@ -21,7 +21,6 @@ class StockAnalysis:
     ma_50: float
     ma_150: float
     ma_200: float
-    ma_200_trending_up: bool      # BUGFIX: store the real value from analyze_stock
     price_52wk_high: float
     price_52wk_low: float
     eps: Optional[float]
@@ -195,7 +194,6 @@ class MinerviniScreener:
                 ma_50=ma_data['ma_50'],
                 ma_150=ma_data['ma_150'],
                 ma_200=ma_data['ma_200'],
-                ma_200_trending_up=ma_data['ma_200_trending_up'],  # BUGFIX: store real value
                 price_52wk_high=high_52wk,
                 price_52wk_low=low_52wk,
                 eps=eps,
@@ -247,7 +245,7 @@ class MinerviniScreener:
                     'ma_50': r.ma_50,
                     'ma_150': r.ma_150,
                     'ma_200': r.ma_200,
-                    'ma_200_trending_up': r.ma_200_trending_up,  # BUGFIX: use stored value
+                    'ma_200_trending_up': r.ma_200 > r.ma_150,  # approximation stored
                 },
                 current_price=r.price,
                 high_52wk=r.price_52wk_high,
@@ -352,7 +350,7 @@ class MinerviniScreener:
                 'ma_50': result.ma_50,
                 'ma_150': result.ma_150,
                 'ma_200': result.ma_200,
-                'ma_200_trending_up': result.ma_200_trending_up,  # BUGFIX: use stored value
+                'ma_200_trending_up': result.ma_200 > result.ma_150,
             },
             current_price=result.price,
             high_52wk=result.price_52wk_high,

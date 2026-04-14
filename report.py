@@ -1,4 +1,5 @@
 import pandas as pd
+import yfinance as yf
 from datetime import datetime
 from typing import List
 from portfolio import PortfolioManager
@@ -42,10 +43,11 @@ class ReportGenerator:
         print("Generating weekly report...")
         
         print("\n=== Analyzing current holdings ===")
+        sp500_data = yf.Ticker("^GSPC").history(period="2y")
         current_holdings = []
         for symbol in self.portfolio.get_symbols():
             print(f"Checking {symbol}...")
-            analysis = self.screener.analyze_stock(symbol)
+            analysis = self.screener.analyze_stock(symbol, sp500_data)
             if analysis:
                 current_holdings.append(analysis)
         
