@@ -36,14 +36,15 @@ class StockAnalysis:
 class MinerviniScreener:
     def __init__(self):
         self.minervini_requirements = {
+            'above_50ma': False,
             'above_150ma': False,
             'above_200ma': False,
+            '50_above_150_200': False,
             '150_above_200': False,
             '200ma_trending_up': False,
-            '50_above_150_200': False,
-            'above_50ma': False,
             'within_25pct_high': False,
-            'above_30pct_low': False,
+            'above_25pct_low': False,
+            'rs_rating_ok': False,
         }
     
     def _calculate_moving_averages(self, data: pd.DataFrame) -> Dict:
@@ -53,9 +54,9 @@ class MinerviniScreener:
         ma200_series = data['Close'].rolling(window=200).mean()
         ma200 = ma200_series.iloc[-1]
         
-        # Check if 200ma is trending up (comparing current to 20 days ago)
-        ma200_20d_ago = ma200_series.iloc[-20] if len(ma200_series) > 20 else ma200
-        ma200_trending_up = ma200 > ma200_20d_ago
+        # Check if 200ma is trending up (comparing current to 22 trading days ago)
+        ma200_22d_ago = ma200_series.iloc[-22] if len(ma200_series) > 22 else ma200
+        ma200_trending_up = ma200 > ma200_22d_ago
         
         return {
             'ma_50': ma50, 
@@ -64,22 +65,24 @@ class MinerviniScreener:
             'ma_200_trending_up': ma200_trending_up
         }
     
-    def _check_trend_template(self, ma_data: Dict, current_price: float, high_52wk: float, low_52wk: float) -> Tuple[bool, Dict, int]:
+    def _check_trend_template(self, ma_data: Dict, current_price: float, high_52wk: float, low_52wk: float, rs_rating: float) -> Tuple[bool, Dict, int]:
         req = self.minervini_requirements.copy()
         score = 0
         
+        req['above_50ma'] = current_price > ma_data['ma_50']
         req['above_150ma'] = current_price > ma_data['ma_150']
         req['above_200ma'] = current_price > ma_data['ma_200']
+        req['50_above_150_200'] = ma_data['ma_50'] > ma_data['ma_150'] and ma_data['ma_50'] > ma_data['ma_200']
         req['150_above_200'] = ma_data['ma_150'] > ma_data['ma_200']
         req['200ma_trending_up'] = ma_data['ma_200_trending_up']
-        req['50_above_150_200'] = ma_data['ma_50'] > ma_data['ma_150'] and ma_data['ma_50'] > ma_data['ma_200']
-        req['above_50ma'] = current_price > ma_data['ma_50']
         
         distance_from_high = ((high_52wk - current_price) / high_52wk) * 100
         req['within_25pct_high'] = distance_from_high <= 25
         
         above_low = ((current_price - low_52wk) / low_52wk) * 100
-        req['above_30pct_low'] = above_low >= 30
+        req['above_25pct_low'] = above_low >= 25
+        
+        req['rs_rating_ok'] = rs_rating >= 70
         
         for key, value in req.items():
             if value:
@@ -132,11 +135,12 @@ class MinerviniScreener:
             sp500 = yf.Ticker("^GSPC").history(period="2y")
             
             ma_data = self._calculate_moving_averages(hist)
-            trend_passed, trend_req, trend_score = self._check_trend_template(
-                ma_data, current_price, high_52wk, low_52wk
-            )
             
             rs_rating = self._get_rs_rating(symbol, sp500, hist)
+            
+            trend_passed, trend_req, trend_score = self._check_trend_template(
+                ma_data, current_price, high_52wk, low_52wk, rs_rating
+            )
             
             eps = info.get('epsTrailingTwelveMonths')
             pe = info.get('trailingPE')
@@ -165,7 +169,7 @@ class MinerviniScreener:
             if eps_growth and eps_growth > 0.4:
                 signals.append(f"Exceptional earnings growth ({eps_growth*100:.0f}%)")
             
-            overall_score = (trend_score / 8 * 50) + (fundamental_score / 4 * 30) + (rs_rating / 100 * 20)
+            overall_score = (trend_score / 9 * 50) + (fundamental_score / 4 * 30) + (rs_rating / 100 * 20)
             
             change_pct = ((current_price - hist['Close'].iloc[-2]) / hist['Close'].iloc[-2]) * 100 if len(hist) > 1 else 0
             

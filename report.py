@@ -7,7 +7,7 @@ from notifier import EmailNotifier
 
 
 class ReportGenerator:
-    def __init__(self, holdings_csv: str = "holdings.csv"):
+    def __init__(self, holdings_csv: str = "/home/alau/long_term_investing/holdings.csv"):
         self.portfolio = PortfolioManager(holdings_csv)
         self.screener = MinerviniScreener()
         self.notifier = EmailNotifier()
@@ -50,7 +50,7 @@ class ReportGenerator:
                 current_holdings.append(analysis)
         
         print("\n=== Finding top opportunities ===")
-        opportunities = self.screener.find_top_opportunities(minervini_pass_only=True, limit=3)
+        opportunities = self.screener.find_top_opportunities(minervini_pass_only=True, limit=10)
         
         html = f"""
         <html>

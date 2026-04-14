@@ -14,7 +14,7 @@ class StockHolding:
 
 
 class PortfolioManager:
-    def __init__(self, csv_path: str = "holdings.csv"):
+    def __init__(self, csv_path: str = "/home/alau/long_term_investing/holdings.csv"):
         self.csv_path = csv_path
         self.holdings: List[StockHolding] = []
         self.load_holdings()
