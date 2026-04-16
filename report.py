@@ -2,6 +2,7 @@ import pandas as pd
 import yfinance as yf
 from datetime import datetime
 from typing import List
+from scipy.stats import percentileofscore
 from portfolio import PortfolioManager
 from screener import MinerviniScreener, StockAnalysis
 from notifier import EmailNotifier
@@ -43,12 +44,53 @@ class ReportGenerator:
         print("Generating weekly report...")
         
         print("\n=== Analyzing current holdings ===")
+        holdings_symbols = self.portfolio.get_symbols()
         sp500_data = yf.Ticker("^GSPC").history(period="2y")
         current_holdings = []
-        for symbol in self.portfolio.get_symbols():
+        for symbol in holdings_symbols:
             print(f"Checking {symbol}...")
             analysis = self.screener.analyze_stock(symbol, sp500_data)
             if analysis:
+                # Need to compute RS rating and run full trend template check
+                all_symbols = holdings_symbols
+                all_raw_perfs = {}
+                for sym in all_symbols:
+                    a = self.screener.analyze_stock(sym, sp500_data)
+                    if a:
+                        all_raw_perfs[sym] = a.rs_raw_perf
+                
+                if analysis.symbol in all_raw_perfs:
+                    all_raw = list(all_raw_perfs.values())
+                    analysis.rs_rating = float(percentileofscore(all_raw, analysis.rs_raw_perf, kind='rank'))
+                
+                passed, req, score = self.screener._check_trend_template(
+                    ma_data={
+                        'ma_50': analysis.ma_50,
+                        'ma_150': analysis.ma_150,
+                        'ma_200': analysis.ma_200,
+                        'ma_200_trending_up': analysis.ma_200_trending_up,
+                    },
+                    current_price=analysis.price,
+                    high_52wk=analysis.price_52wk_high,
+                    low_52wk=analysis.price_52wk_low,
+                    rs_rating=analysis.rs_rating,
+                )
+                analysis.minervini_passed = passed
+                analysis.trend_score = score
+                analysis.trend_requirements = req
+                
+                signals = []
+                if passed:
+                    signals.append("✅ MINERVINI TREND TEMPLATE PASSED")
+                else:
+                    failed = [k for k, v in req.items() if not v]
+                    signals.append(f"❌ Failed criteria: {', '.join(failed)}")
+                if score >= 7:
+                    signals.append(f"Strong trend ({score}/9 criteria)")
+                if analysis.rs_rating >= 80:
+                    signals.append(f"High relative strength (RS: {analysis.rs_rating:.0f})")
+                analysis.signals = signals
+                
                 current_holdings.append(analysis)
         
         print("\n=== Finding top opportunities ===")
@@ -110,7 +152,7 @@ class ReportGenerator:
                     <td>{self.format_price(holding.price)}</td>
                     <td class="{price_class}">{self.format_pct(holding.change_pct)}</td>
                     <td>{holding.rs_rating:.0f}</td>
-                    <td>{holding.trend_score}/8</td>
+                    <td>{holding.trend_score}/9</td>
                     <td class="{status_class}">{status}</td>
                     <td>{action}</td>
                 </tr>
@@ -119,7 +161,7 @@ class ReportGenerator:
         html += """
             </table>
             
-            <h2>Top 3 Opportunities (Minervini Pass)</h2>
+            <h2>Top 10 Opportunities (Minervini Pass)</h2>
         """
         
         if opportunities:
@@ -139,7 +181,7 @@ class ReportGenerator:
                     <td><strong>{opp.symbol}</strong><br><small>{opp.name}</small></td>
                     <td>{self.format_price(opp.price)}</td>
                     <td>{opp.rs_rating:.0f}</td>
-                    <td>{opp.trend_score}/8</td>
+                    <td>{opp.trend_score}/9</td>
                     <td>{', '.join(opp.signals[:2])}</td>
                 </tr>
                 """
@@ -151,11 +193,11 @@ class ReportGenerator:
             <h2>Understanding the Report</h2>
             <ul>
                 <li><strong>RS Rating:</strong> Weighted relative strength vs S&P 500 (0-100, higher is better)</li>
-                <li><strong>Trend Score:</strong> Minervini template checks passed (0-8)</li>
-                <li><strong>OPTIMAL:</strong> Stock meets ALL 8 Minervini trend criteria + fundamentals</li>
-                <li><strong>GOOD:</strong> Most criteria met (6+/8) - hold position</li>
-                <li><strong>WEAK:</strong> Losing momentum (4-5/8) - review position</li>
-                <li><strong>SELL/WATCH:</strong> No longer meets core criteria (<4/8) - consider selling</li>
+                <li><strong>Trend Score:</strong> Minervini template checks passed (0-9)</li>
+                <li><strong>OPTIMAL:</strong> Stock meets ALL 9 Minervini trend criteria + fundamentals</li>
+                <li><strong>GOOD:</strong> Most criteria met (7+/9) - hold position</li>
+                <li><strong>WEAK:</strong> Losing momentum (5-6/9) - review position</li>
+                <li><strong>SELL/WATCH:</strong> No longer meets core criteria (<5/9) - consider selling</li>
             </ul>
             
             <p style="margin-top: 30px; color: #7f8c8d; font-size: 12px;">
