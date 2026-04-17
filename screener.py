@@ -36,6 +36,12 @@ class StockAnalysis:
     overall_score: float
     signals: List[str]
     minervini_passed: bool    # FIX #3: explicit hard pass/fail flag
+    # New fields for entry points, earnings, and catalysts
+    next_earnings_date: Optional[str] = None
+    recent_news: List[str] = None
+    entry_zone: Optional[str] = None
+    entry_price: Optional[float] = None
+    catalyst: Optional[str] = None
 
 
 class MinerviniScreener:
@@ -62,6 +68,32 @@ class MinerviniScreener:
             'ma_200': float(ma200),
             'ma_200_trending_up': ma200_trending_up,
         }
+
+    def _identify_entry_zone(
+        self,
+        current_price: float,
+        high_52wk: float,
+        low_52wk: float,
+        ma_50: float,
+        ma_150: float,
+        ma_200: float,
+        ma_200_trending_up: bool,
+    ) -> Tuple[Optional[str], Optional[float]]:
+        pct_from_high = ((high_52wk - current_price) / high_52wk) * 100
+        pct_from_low = ((current_price - low_52wk) / low_52wk) * 100
+
+        ma_stack_aligned = ma_50 > ma_150 > ma_200
+
+        if pct_from_high <= 5 and ma_stack_aligned:
+            return "base_breakout", current_price
+        elif pct_from_high <= 15 and ma_stack_aligned and pct_from_low >= 25:
+            return "tight_consolidation", current_price
+        elif ma_stack_aligned and ma_200_trending_up:
+            if abs(current_price - ma_50) / ma_50 <= 0.03:
+                return "at_50ma_pullback", ma_50
+            elif abs(current_price - ma_150) / ma_150 <= 0.03:
+                return "at_150ma_pullback", ma_150
+        return None, None
 
     # ---------------------------------------------------------------------------
     # FIX #2 — RS rating: return raw weighted performance only.
@@ -186,6 +218,12 @@ class MinerviniScreener:
                 if len(hist) > 1 else 0.0
             )
 
+            entry_zone, entry_price = self._identify_entry_zone(
+                current_price, high_52wk, low_52wk,
+                ma_data['ma_50'], ma_data['ma_150'], ma_data['ma_200'],
+                ma_data['ma_200_trending_up']
+            )
+
             return StockAnalysis(
                 symbol=symbol.upper(),
                 name=info.get('shortName', symbol),
@@ -210,6 +248,8 @@ class MinerviniScreener:
                 overall_score=0.0,      # placeholder
                 signals=[],
                 minervini_passed=False, # placeholder
+                entry_zone=entry_zone,
+                entry_price=entry_price,
             )
         except Exception as e:
             logger.error(f"Error analyzing {symbol}: {e}")

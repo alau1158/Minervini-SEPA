@@ -6,6 +6,7 @@ from scipy.stats import percentileofscore
 from portfolio import PortfolioManager
 from screener import MinerviniScreener, StockAnalysis
 from notifier import EmailNotifier
+from api_clients import fetch_stock_data
 
 
 class ReportGenerator:
@@ -42,9 +43,11 @@ class ReportGenerator:
     
     def generate_report(self, recipient: str) -> bool:
         print("Generating weekly report...")
-        
-        print("\n=== Analyzing current holdings ===")
+
+        print("\n=== Fetching external data ===")
         holdings_symbols = self.portfolio.get_symbols()
+        opportunity_symbols = []
+        print("\n=== Analyzing current holdings ===")
         sp500_data = yf.Ticker("^GSPC").history(period="2y")
         current_holdings = []
         for symbol in holdings_symbols:
@@ -95,6 +98,24 @@ class ReportGenerator:
         
         print("\n=== Finding top opportunities ===")
         opportunities = self.screener.find_top_opportunities(minervini_pass_only=True, limit=10)
+
+        all_symbols_for_api = [o.symbol for o in opportunities] + holdings_symbols
+        print(f"Fetching earnings and news data for {len(all_symbols_for_api)} symbols...")
+        external_data = fetch_stock_data(all_symbols_for_api, use_finnhub=True)
+
+        for o in opportunities:
+            if o.symbol in external_data:
+                data = external_data[o.symbol]
+                o.next_earnings_date = data.get("next_earnings")
+                o.recent_news = data.get("recent_news", [])
+                o.catalyst = data.get("catalyst")
+
+        for h in current_holdings:
+            if h.symbol in external_data:
+                data = external_data[h.symbol]
+                h.next_earnings_date = data.get("next_earnings")
+                h.recent_news = data.get("recent_news", [])
+                h.catalyst = data.get("catalyst")
         
         html = f"""
         <html>
@@ -170,24 +191,51 @@ class ReportGenerator:
                 <tr>
                     <th>Symbol</th>
                     <th>Price</th>
+                    <th>Entry Zone</th>
                     <th>RS Rating</th>
                     <th>Trend Score</th>
-                    <th>Signals</th>
+                    <th>Next Earnings</th>
+                    <th>Catalyst</th>
                 </tr>
             """
             for opp in opportunities:
+                entry_zone = opp.entry_zone or "-"
+                earnings = opp.next_earnings_date or "-"
+                catalyst = opp.catalyst or "-"
                 html += f"""
                 <tr>
                     <td><strong>{opp.symbol}</strong><br><small>{opp.name}</small></td>
                     <td>{self.format_price(opp.price)}</td>
+                    <td>{entry_zone}</td>
                     <td>{opp.rs_rating:.0f}</td>
                     <td>{opp.trend_score}/9</td>
-                    <td>{', '.join(opp.signals[:2])}</td>
+                    <td>{earnings}</td>
+                    <td>{catalyst}</td>
                 </tr>
                 """
             html += "</table>"
         else:
             html += "<p>No stocks currently passing the Minervini template.</p>"
+
+        if opportunities and any(o.recent_news for o in opportunities):
+            html += """
+            <h2>Recent Catalysts (News)</h2>
+            <table>
+                <tr>
+                    <th>Symbol</th>
+                    <th>Recent Headlines</th>
+                </tr>
+            """
+            for opp in opportunities:
+                if opp.recent_news:
+                    news_html = "<br>".join(opp.recent_news[:2])
+                    html += f"""
+                    <tr>
+                        <td><strong>{opp.symbol}</strong></td>
+                        <td>{news_html}</td>
+                    </tr>
+                    """
+            html += "</table>"
         
         html += """
             <h2>Understanding the Report</h2>
