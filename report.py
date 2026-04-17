@@ -7,6 +7,7 @@ from portfolio import PortfolioManager
 from screener import MinerviniScreener, StockAnalysis
 from notifier import EmailNotifier
 from api_clients import fetch_stock_data
+from ai_analyst import get_ai_analysis
 
 
 class ReportGenerator:
@@ -116,7 +117,10 @@ class ReportGenerator:
                 h.next_earnings_date = data.get("next_earnings")
                 h.recent_news = data.get("recent_news", [])
                 h.catalyst = data.get("catalyst")
-        
+
+        print("\n=== Running AI Analysis (Gemini Flash) ===")
+        ai_analysis = get_ai_analysis(opportunities)
+
         html = f"""
         <html>
         <head>
@@ -135,6 +139,9 @@ class ReportGenerator:
                 .negative {{ color: #e74c3c; }}
                 .signals {{ background-color: #ecf0f1; padding: 10px; border-radius: 5px; }}
                 .summary {{ background-color: #e8f6f3; padding: 15px; border-radius: 5px; margin: 20px 0; }}
+                .ai-buy {{ color: #27ae60; font-weight: bold; }}
+                .ai-hold {{ color: #f39c12; }}
+                .ai-skip {{ color: #e74c3c; }}
             </style>
         </head>
         <body>
@@ -236,7 +243,23 @@ class ReportGenerator:
                     </tr>
                     """
             html += "</table>"
-        
+
+        if ai_analysis:
+            html += """
+            <h2>AI Analysis (Gemini Flash)</h2>
+            <div class="summary">
+            """
+            for symbol, ai in ai_analysis.items():
+                color = "#27ae60" if ai.recommendation in ["strong_buy", "buy"] else "#f39c12" if ai.recommendation == "hold" else "#e74c3c"
+                html += f"""
+                <div style="margin-bottom: 15px; padding: 10px; border-left: 3px solid {color}; background-color: #fafafa;">
+                    <strong>{symbol}</strong> <span style="color: {color};">[{ai.recommendation.upper()}]</span><br>
+                    <small>{ai.summary}</small><br>
+                    <small>Setup: {ai.setup_quality} | Risk: {ai.risk_level}</small>
+                </div>
+                """
+            html += "</div>"
+
         html += """
             <h2>Understanding the Report</h2>
             <ul>
