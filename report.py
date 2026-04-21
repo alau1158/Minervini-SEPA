@@ -26,7 +26,7 @@ class ReportGenerator:
         print("Generating weekly report...")
 
         print("\n=== Finding top opportunities ===")
-        opportunities = self.screener.find_top_opportunities(minervini_pass_only=True, limit=10)
+        opportunities = self.screener.find_top_opportunities(minervini_pass_only=True, limit=25)
 
         all_symbols_for_api = [o.symbol for o in opportunities]
         print(f"Fetching earnings and news data for {len(all_symbols_for_api)} symbols...")
@@ -75,7 +75,7 @@ class ReportGenerator:
                 <p><strong>Top Opportunities:</strong> {len(opportunities)} stocks passing Minervini template</p>
             </div>
             
-            <h2>Top 10 Opportunities (Minervini Pass)</h2>
+            <h2>Top 25 Opportunities (Minervini Pass)</h2>
         """
         
         if opportunities:
