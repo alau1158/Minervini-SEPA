@@ -26,3 +26,4 @@ Thumbs.db
 # Log files
 .log
 holdings.csv
+session*.md
