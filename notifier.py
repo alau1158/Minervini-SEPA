@@ -15,14 +15,19 @@ class EmailNotifier:
         self.username = os.getenv('SMTP_USER')
         self.password = os.getenv('SMTP_PASSWORD')
     
-    def send_report(self, to_email: str, subject: str, body: str):
+    def send_report(self, to_emails: str | List[str], subject: str, body: str):
         if not self.username or not self.password:
             print("SMTP credentials not configured")
             return False
         
+        if isinstance(to_emails, str):
+            to_emails = [e.strip() for e in to_emails.split(',') if e.strip()]
+        
+        to_email_str = ', '.join(to_emails)
+        
         msg = MIMEMultipart('alternative')
         msg['From'] = self.username
-        msg['To'] = to_email
+        msg['To'] = to_email_str
         msg['Subject'] = subject
         
         msg.attach(MIMEText(body, 'html'))
@@ -33,7 +38,7 @@ class EmailNotifier:
             server.login(self.username, self.password)
             server.send_message(msg)
             server.quit()
-            print(f"Email sent to {to_email}")
+            print(f"Email sent to {to_email_str}")
             return True
         except Exception as e:
             print(f"Failed to send email: {e}")

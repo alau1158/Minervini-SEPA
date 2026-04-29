@@ -141,8 +141,8 @@ class ReportGenerator:
         return self.notifier.send_report(recipient, subject, html)
     
     def run_weekly(self):
-        recipient = os.getenv("SMTP_USER", "alau1158@gmail.com")
-        self.generate_report(recipient)
+        recipients = os.getenv("RECIPIENTS", os.getenv("SMTP_USER", "alau1158@gmail.com"))
+        self.generate_report(recipients)
 
 
 if __name__ == "__main__":
