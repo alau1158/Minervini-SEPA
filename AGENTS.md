@@ -36,8 +36,8 @@ python report.py              # Run single report
 
 ## Minervini Criteria Used
 
-- Price > 150-day MA > 200-day MA
-- 50-day MA > 150-day MA > 200-day MA
+- Price > 50-day MA > 150-day MA > 200-day MA
+- 200-day MA trending up (1+ month)
 - Price within 25% of 52-week high
 - RS rating > 80 vs S&P 500
-- Positive EPS and revenue growth
+- Positive EPS (25%+) and revenue growth (25%+)

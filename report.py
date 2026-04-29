@@ -105,7 +105,7 @@ class ReportGenerator:
                     <td>{self.format_price(opp.price)}</td>
                     <td>{entry_zone}</td>
                     <td>{opp.rs_rating:.0f}</td>
-                    <td>{opp.trend_score}/9</td>
+                    <td>{opp.trend_score}/8</td>
                     <td>{earnings}</td>
                     <td>{catalyst}</td>
                 </tr>

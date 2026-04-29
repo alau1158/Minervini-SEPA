@@ -153,14 +153,10 @@ class MinerviniScreener:
         distance_from_high = ((high_52wk - current_price) / high_52wk) * 100
         req['within_25pct_of_high'] = distance_from_high <= 25
 
-        above_low_pct = ((current_price - low_52wk) / low_52wk) * 100
-        req['above_25pct_of_low']   = above_low_pct >= 25
-
         # --- RS rating (8th criterion, counted once) ---
-        req['rs_rating_above_70']   = rs_rating >= 70
+        req['rs_rating_above_80']   = rs_rating >= 80
 
-        # FIX #6 — denominator is 9 criteria total (8 classic + RS = 9 here, but
-        #           RS is NOT double-counted in overall_score like it was before)
+        # FIX #6 — denominator is 8 criteria total (7 MA/price + RS)
         score = sum(1 for v in req.values() if v)
 
         # FIX #3 — hard binary: ALL criteria must pass
@@ -322,7 +318,7 @@ class MinerviniScreener:
             # FIX #6 — RS contributes via its own term only (no double-count)
             if passed:
                 r.overall_score = (
-                    (score / 9)           * 50 +   # trend (9 criteria, denominator=9)
+                    (score / 8)           * 50 +   # trend (8 criteria)
                     (r.fundamental_score / 4) * 30 + # fundamentals
                     (r.rs_rating / 100)   * 20       # RS percentile
                 )
