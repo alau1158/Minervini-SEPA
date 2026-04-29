@@ -16,6 +16,7 @@ class AIAnalysis:
     risk_level: str
     key_catalysts: List[str]
     recommendation: str
+    estimated_entry_price: Optional[float] = None
 
 
 class GeminiAnalyst:
@@ -34,14 +35,20 @@ Data:
 - Price: ${stock_data.get('price', 'N/A')}
 - Entry Zone: {stock_data.get('entry_zone', 'N/A')}
 - RS Rating: {stock_data.get('rs_rating', 'N/A')}
-- Trend Score: {stock_data.get('trend_score', 'N/A')}/
+- Trend Score: {stock_data.get('trend_score', 'N/A')}
 - Earnings: {stock_data.get('next_earnings', 'N/A')}
-- News: {stock_data.get('recent_news', [])[:1]}
+- Catalyst: {stock_data.get('catalyst', 'N/A')}
+- Recent News: {stock_data.get('recent_news', [])[:3]}
 
-Reply with EXACT 5 lines:
+Review these major catalysts to assess their impact on the stock's near-term outlook.
+
+Reply with EXACT format:
 - SU: [exceptional/good/weak]
 - RI: [low/medium/high]
-- CA: [1 catalyst]
+- CA: [catalyst 1]
+- CA: [catalyst 2 if available]
+- CA: [catalyst 3 if available]
+- EP: [estimated entry price, e.g., $123.45]
 - RE: [strong_buy/buy/hold/skip]
 - SU: [1 sentence summary]"""
 
@@ -65,6 +72,7 @@ Reply with EXACT 5 lines:
             lines = [l.strip() for l in text.split("\n") if l.strip()]
             setup = risk = rec = summary = None
             catalysts = []
+            entry_price = None
             for line in lines:
                 if line.startswith("- SU:"):
                     val = line.split("SU:")[1].strip()
@@ -76,6 +84,11 @@ Reply with EXACT 5 lines:
                     risk = line.split("RI:")[1].strip()
                 elif line.startswith("- CA:"):
                     catalysts.append(line.split("CA:")[1].strip())
+                elif line.startswith("- EP:"):
+                    try:
+                        entry_price = float(line.split("EP:")[1].strip().replace("$", ""))
+                    except:
+                        entry_price = None
                 elif line.startswith("- RE:"):
                     rec = line.split("RE:")[1].strip()
 
@@ -86,6 +99,7 @@ Reply with EXACT 5 lines:
                 risk_level=risk or "N/A",
                 key_catalysts=catalysts or [],
                 recommendation=rec or "skip",
+                estimated_entry_price=entry_price,
             )
         except Exception as e:
             print(f"AI analysis failed for {symbol}: {e}")
