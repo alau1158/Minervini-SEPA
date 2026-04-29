@@ -2,7 +2,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
-from typing import List
+from typing import List, Union
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -15,7 +15,7 @@ class EmailNotifier:
         self.username = os.getenv('SMTP_USER')
         self.password = os.getenv('SMTP_PASSWORD')
     
-    def send_report(self, to_emails: str | List[str], subject: str, body: str):
+    def send_report(self, to_emails: Union[str, List[str]], subject: str, body: str):
         if not self.username or not self.password:
             print("SMTP credentials not configured")
             return False
