@@ -1,8 +1,12 @@
+import os
 import pandas as pd
 import yfinance as yf
 from datetime import datetime
 from typing import List
 from scipy.stats import percentileofscore
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from screener import MinerviniScreener, StockAnalysis
 from notifier import EmailNotifier
@@ -169,7 +173,7 @@ class ReportGenerator:
         return self.notifier.send_report(recipient, subject, html)
     
     def run_weekly(self):
-        recipient = "alau1158@gmail.com"
+        recipient = os.getenv("SMTP_USER", "alau1158@gmail.com")
         self.generate_report(recipient)
 
 

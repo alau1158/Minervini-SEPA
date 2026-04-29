@@ -31,7 +31,7 @@ python report.py              # Run single report
 
 ## Running
 
-- `python report.py` - sends report to alau1158@gmail.com
+- `python report.py` - sends report to email in SMTP_USER (.env)
 - Edit `holdings.csv` with your actual stocks before first run
 
 ## Minervini Criteria Used
