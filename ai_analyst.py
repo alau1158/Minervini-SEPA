@@ -22,7 +22,7 @@ class AIAnalysis:
 class GeminiAnalyst:
     def __init__(self, api_key: str = None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        self.model = "gemini-2.5-flash-lite"
+        self.model = "gemini-3.1-flash-lite-preview"
 
     def analyze_stock(self, symbol: str, stock_data: Dict) -> Optional[AIAnalysis]:
         if not self.api_key:
