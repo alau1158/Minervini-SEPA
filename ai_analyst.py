@@ -111,7 +111,7 @@ Reply with EXACT format:
             print("No Gemini API key configured - skipping AI analysis")
             return results
 
-        for stock in stocks[:5]:
+        for stock in stocks[:10]:
             stock_data = {
                 "price": getattr(stock, "price", None),
                 "entry_zone": getattr(stock, "entry_zone", None),

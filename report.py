@@ -73,7 +73,7 @@ class ReportGenerator:
             </style>
         </head>
         <body>
-            <h1>📈 Weekly Stock Report</h1>
+            <h1>📈 Minervini SEPA stocks - {datetime.now().strftime('%Y-%m-%d')}</h1>
             <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
             
             <div class="summary">
@@ -140,7 +140,7 @@ class ReportGenerator:
         </html>
         """
         
-        subject = f"Weekly Stock Report - {datetime.now().strftime('%Y-%m-%d')}"
+        subject = f"Minervini SEPA stocks - {datetime.now().strftime('%Y-%m-%d')}"
         return self.notifier.send_report(recipient, subject, html)
     
     def run_weekly(self):

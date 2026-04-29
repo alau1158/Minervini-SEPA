@@ -76,14 +76,11 @@ class FinnhubClient:
 
 def fetch_stock_data(symbols: List[str], use_finnhub: bool = True) -> Dict[str, Dict]:
     result = {}
-    av_client = AlphaVantageClient()
     fh_client = FinnhubClient()
-
-    earnings_dates = av_client.get_earnings_calendar(symbols[:10])
 
     for symbol in symbols:
         entry = {
-            "next_earnings": earnings_dates.get(symbol),
+            "next_earnings": None,
             "recent_news": [],
             "catalyst": None,
         }
@@ -93,7 +90,7 @@ def fetch_stock_data(symbols: List[str], use_finnhub: bool = True) -> Dict[str, 
             entry["recent_news"] = [n["headline"] for n in news[:3]]
 
             earnings_cal = fh_client.get_earnings_calendar(symbol)
-            if earnings_cal and not entry["next_earnings"]:
+            if earnings_cal:
                 entry["next_earnings"] = earnings_cal.get("date")
                 entry["catalyst"] = earnings_cal.get("estimate")
 
