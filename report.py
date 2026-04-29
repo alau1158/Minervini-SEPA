@@ -32,6 +32,9 @@ class ReportGenerator:
         print("\n=== Finding top opportunities ===")
         opportunities = self.screener.find_top_opportunities(minervini_pass_only=True, limit=10)
 
+        # Sort by RS rating (highest first)
+        opportunities.sort(key=lambda x: x.rs_rating, reverse=True)
+
         all_symbols_for_api = [o.symbol for o in opportunities]
         print(f"Fetching earnings and news data for {len(all_symbols_for_api)} symbols...")
         external_data = fetch_stock_data(all_symbols_for_api, use_finnhub=True)
