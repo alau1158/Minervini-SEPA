@@ -46,7 +46,7 @@ class ReportGenerator:
                 o.recent_news = data.get("recent_news", [])
                 o.catalyst = data.get("catalyst")
 
-        print("\n=== Running AI Analysis (Gemini Flash) ===")
+        print("\n=== Running AI Analysis (Gemini Pro) ===")
         ai_analysis = get_ai_analysis(opportunities)
 
         html = f"""
