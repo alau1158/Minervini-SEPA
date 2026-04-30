@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 import logging
+import argparse
+import sys
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -256,10 +258,10 @@ class MinerviniScreener:
     # FIX #3 — overall_score is 0 for any stock that fails the template
     # FIX #4 — S&P 500 data fetched ONCE here, passed into every analyze_stock call
     # ---------------------------------------------------------------------------
-    def screen_candidates(self, symbols: List[str]) -> List[StockAnalysis]:
-        # FIX #4: fetch S&P 500 data once
-        logger.info("Fetching S&P 500 benchmark data...")
-        sp500_data = yf.Ticker("^GSPC").history(period="2y")
+    def screen_candidates(self, symbols: List[str], benchmark_ticker: str = "^GSPC") -> List[StockAnalysis]:
+        # FIX #4: fetch benchmark data once
+        logger.info(f"Fetching {benchmark_ticker} benchmark data...")
+        sp500_data = yf.Ticker(benchmark_ticker).history(period="2y")
 
         results: List[StockAnalysis] = []
         for symbol in symbols:
@@ -352,14 +354,60 @@ class MinerviniScreener:
             ]
 
     # ---------------------------------------------------------------------------
-    # Main entry point
+    # S&P 400 (Mid-Cap) symbol list helper
     # ---------------------------------------------------------------------------
-    def find_top_opportunities(self, minervini_pass_only: bool = True, limit: int = 10) -> List[StockAnalysis]:
-        logger.info("Fetching S&P 500 symbols...")
-        symbols = self._get_sp500_symbols()
+    def _get_sp400_symbols(self) -> List[str]:
+        try:
+            import requests
+            from io import StringIO
+            url = "https://en.wikipedia.org/wiki/List_of_S%26P_400_companies"
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            response = requests.get(url, timeout=10, headers=headers)
+            dfs = pd.read_html(StringIO(response.text))
+            symbols = dfs[0]['Symbol'].str.replace('.', '-', regex=False).tolist()
+            return symbols
+        except Exception as e:
+            logger.warning(f"Failed to fetch S&P 400 list: {e}, using fallback")
+            return []
+
+    # ---------------------------------------------------------------------------
+    # S&P 600 (Small-Cap) symbol list helper
+    # ---------------------------------------------------------------------------
+    def _get_sp600_symbols(self) -> List[str]:
+        try:
+            import requests
+            from io import StringIO
+            url = "https://en.wikipedia.org/wiki/List_of_S%26P_600_companies"
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            response = requests.get(url, timeout=10, headers=headers)
+            dfs = pd.read_html(StringIO(response.text))
+            symbols = dfs[0]['Symbol'].str.replace('.', '-', regex=False).tolist()
+            return symbols
+        except Exception as e:
+            logger.warning(f"Failed to fetch S&P 600 list: {e}, using fallback")
+            return []
+
+    # ---------------------------------------------------------------------------
+    # Main entry point
+    # index: 'sp500' (default), 'sp400', or 'sp600'
+    # ---------------------------------------------------------------------------
+    def find_top_opportunities(self, minervini_pass_only: bool = True, limit: int = 10, index: str = 'sp500') -> List[StockAnalysis]:
+        if index == 'sp400':
+            logger.info("Fetching S&P 400 (Mid-Cap) symbols...")
+            symbols = self._get_sp400_symbols()
+            benchmark = "^SP400"
+        elif index == 'sp600':
+            logger.info("Fetching S&P 600 (Small-Cap) symbols...")
+            symbols = self._get_sp600_symbols()
+            benchmark = "^SP600"
+        else:
+            logger.info("Fetching S&P 500 symbols...")
+            symbols = self._get_sp500_symbols()
+            benchmark = "^GSPC"
+
         logger.info(f"Loaded {len(symbols)} symbols")
 
-        results = self.screen_candidates(symbols)
+        results = self.screen_candidates(symbols, benchmark)
 
         if minervini_pass_only:
             results = [r for r in results if r.minervini_passed]
@@ -369,12 +417,12 @@ class MinerviniScreener:
     # ---------------------------------------------------------------------------
     # Convenience: audit a single stock with full breakdown (great for debugging)
     # ---------------------------------------------------------------------------
-    def audit_stock(self, symbol: str) -> None:
+    def audit_stock(self, symbol: str, benchmark_ticker: str = "^GSPC") -> None:
         """
         Print a full pass/fail breakdown for a single stock.
         Useful for verifying DELL, MSFT, etc. against the template manually.
         """
-        sp500_data = yf.Ticker("^GSPC").history(period="2y")
+        sp500_data = yf.Ticker(benchmark_ticker).history(period="2y")
         result = self.analyze_stock(symbol, sp500_data)
         if not result:
             print(f"Could not fetch data for {symbol}")
@@ -418,15 +466,39 @@ class MinerviniScreener:
 # Quick-start
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Minervini Stock Screener')
+    parser.add_argument('-sp400', action='store_true', help='Screen S&P 400 (Mid-Cap) stocks')
+    parser.add_argument('-sp600', action='store_true', help='Screen S&P 600 (Small-Cap) stocks')
+    parser.add_argument('--audit', type=str, help='Audit a specific stock symbol')
+    parser.add_argument('--limit', type=int, default=10, help='Number of results to return (default: 10)')
+    args = parser.parse_args()
+
     screener = MinerviniScreener()
+
+    # Determine which index to use
+    if args.sp400:
+        index = 'sp400'
+        index_name = 'S&P 400 (Mid-Cap)'
+    elif args.sp600:
+        index = 'sp600'
+        index_name = 'S&P 600 (Small-Cap)'
+    else:
+        index = 'sp500'
+        index_name = 'S&P 500'
+
+    # Audit specific stock if requested
+    if args.audit:
+        benchmark_map = {'sp500': '^GSPC', 'sp400': '^SP400', 'sp600': '^SP600'}
+        screener.audit_stock(args.audit.upper(), benchmark_map[index])
+        sys.exit(0)
 
     # Audit specific stocks to verify logic
     for ticker in ["MU", "GOOG", "APH", "DELL", "MSFT"]:
         screener.audit_stock(ticker)
 
     # Full screen — only stocks passing ALL Minervini criteria
-    print("\nRunning full S&P 500 screen...\n")
-    top = screener.find_top_opportunities(minervini_pass_only=True, limit=10)
+    print(f"\nRunning full {index_name} screen...\n")
+    top = screener.find_top_opportunities(minervini_pass_only=True, limit=args.limit, index=index)
     for i, s in enumerate(top, 1):
         print(f"{i:2}. {s.symbol:<6}  Score: {s.overall_score:.1f}  RS: {s.rs_rating:.0f}  "
               f"Price: ${s.price:.2f}  Signals: {'; '.join(s.signals)}")

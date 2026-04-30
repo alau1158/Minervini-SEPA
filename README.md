@@ -47,10 +47,28 @@ curl -sS https://bootstrap.pypa.io/get-pip.py | python3
 ## Usage
 
 ```bash
-# Run once
+# Run once (S&P 500 by default)
 python report.py
 
-# Run scheduler (sends weekly)
+# Run for S&P 400 (Mid-Cap)
+python report.py -sp400
+
+# Run for S&P 600 (Small-Cap)
+python report.py -sp600
+
+# Screen S&P 500 stocks
+python screener.py
+
+# Screen S&P 400 stocks
+python screener.py -sp400
+
+# Screen S&P 600 stocks
+python screener.py -sp600
+
+# Audit a specific stock
+python screener.py --audit AAPL
+
+# Run scheduler (sends weekly - S&P 500)
 python scheduler.py
 ```
 

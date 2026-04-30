@@ -1,10 +1,12 @@
 import os
+import sys
 import pandas as pd
 import yfinance as yf
 from datetime import datetime
 from typing import List
 from scipy.stats import percentileofscore
 from dotenv import load_dotenv
+import argparse
 
 load_dotenv()
 
@@ -26,11 +28,19 @@ class ReportGenerator:
         sign = "+" if pct > 0 else ""
         return f"{sign}{pct:.2f}%"
     
-    def generate_report(self, recipient: str) -> bool:
-        print("Generating weekly report...")
+    def generate_report(self, recipient: str, index: str = 'sp500') -> bool:
+        # Map index to display name
+        index_names = {
+            'sp500': 'S&P 500',
+            'sp400': 'S&P 400 (Mid-Cap)',
+            'sp600': 'S&P 600 (Small-Cap)'
+        }
+        index_name = index_names.get(index, 'S&P 500')
+
+        print(f"Generating weekly report for {index_name}...")
 
         print("\n=== Finding top opportunities ===")
-        opportunities = self.screener.find_top_opportunities(minervini_pass_only=True, limit=10)
+        opportunities = self.screener.find_top_opportunities(minervini_pass_only=True, limit=10, index=index)
 
         # Sort by RS rating (highest first)
         opportunities.sort(key=lambda x: x.rs_rating, reverse=True)
@@ -73,14 +83,15 @@ class ReportGenerator:
             </style>
         </head>
         <body>
-            <h1>📈 Minervini SEPA stocks - {datetime.now().strftime('%Y-%m-%d')}</h1>
+            <h1>📈 Minervini SEPA - {index_name} - {datetime.now().strftime('%Y-%m-%d')}</h1>
             <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
-            
+
             <div class="summary">
                 <h3>Summary</h3>
+                <p><strong>Index:</strong> {index_name}</p>
                 <p><strong>Top Opportunities:</strong> {len(opportunities)} stocks passing Minervini template</p>
             </div>
-            
+
             <h2>Top 10 Opportunities (Minervini Pass)</h2>
         """
         
@@ -143,11 +154,28 @@ class ReportGenerator:
         subject = f"Minervini SEPA stocks - {datetime.now().strftime('%Y-%m-%d')}"
         return self.notifier.send_report(recipient, subject, html)
     
-    def run_weekly(self):
+    def run_weekly(self, index: str = 'sp500'):
         recipients = os.getenv("RECIPIENTS", os.getenv("SMTP_USER"))
-        self.generate_report(recipients)
+        self.generate_report(recipients, index)
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Minervini Weekly Report Generator')
+    parser.add_argument('-sp400', action='store_true', help='Use S&P 400 (Mid-Cap) stocks')
+    parser.add_argument('-sp600', action='store_true', help='Use S&P 600 (Small-Cap) stocks')
+    args = parser.parse_args()
+
+    # Determine which index to use
+    if args.sp400:
+        index = 'sp400'
+        index_name = 'S&P 400 (Mid-Cap)'
+    elif args.sp600:
+        index = 'sp600'
+        index_name = 'S&P 600 (Small-Cap)'
+    else:
+        index = 'sp500'
+        index_name = 'S&P 500'
+
+    print(f"Generating report for {index_name}...")
     report = ReportGenerator()
-    report.run_weekly()
+    report.run_weekly(index)

@@ -5,7 +5,9 @@
 ```bash
 pip install -r requirements.txt
 python scheduler.py          # Run weekly reports (Sundays 9am)
-python report.py              # Run single report
+python report.py              # Run single report (S&P 500 by default)
+python screener.py -sp400     # Screen S&P 400 (Mid-Cap) stocks
+python screener.py -sp600     # Screen S&P 600 (Small-Cap) stocks
 ```
 
 ## Project Structure
@@ -31,7 +33,13 @@ python report.py              # Run single report
 
 ## Running
 
-- `python report.py` - sends report to email in SMTP_USER (.env)
+- `python report.py` - sends report for S&P 500 to email in SMTP_USER (.env)
+- `python report.py -sp400` - sends report for S&P 400 (Mid-Cap)
+- `python report.py -sp600` - sends report for S&P 600 (Small-Cap)
+- `python screener.py` - run screener for S&P 500
+- `python screener.py -sp400` - run screener for S&P 400
+- `python screener.py -sp600` - run screener for S&P 600
+- `python screener.py --audit SYMBOL` - audit a specific stock
 - Edit `holdings.csv` with your actual stocks before first run
 
 ## Minervini Criteria Used
