@@ -19,17 +19,14 @@ class AIAnalysis:
     estimated_entry_price: Optional[float] = None
 
 
-class GeminiAnalyst:
-    def __init__(self, api_key: str = None):
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        self.model = "gemini-3.1-flash-lite-preview"
+class BaseAnalyst:
+    """Base class for AI analysts with shared logic."""
 
-    def analyze_stock(self, symbol: str, stock_data: Dict) -> Optional[AIAnalysis]:
-        if not self.api_key:
-            return None
+    def __init__(self):
+        self.api_key = None
 
-        try:
-            prompt = f"""Analyze {symbol} stock for investment.
+    def _build_prompt(self, symbol: str, stock_data: Dict) -> str:
+        return f"""Analyze {symbol} stock for investment.
 
 Data:
 - Price: ${stock_data.get('price', 'N/A')}
@@ -52,22 +49,19 @@ Reply with EXACT format:
 - RE: [strong_buy/buy/hold/skip]
 - SU: [1 sentence summary]"""
 
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
-            payload = {
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {
-                    "temperature": 0.7,
-                    "maxOutputTokens": 500,
-                }
-            }
+    def _call_llm(self, prompt: str) -> Optional[str]:
+        raise NotImplementedError("Subclasses must implement _call_llm")
 
-            response = requests.post(url, json=payload, timeout=30)
-            if response.status_code != 200:
-                print(f"Gemini API error: {response.status_code}")
+    def analyze_stock(self, symbol: str, stock_data: Dict) -> Optional[AIAnalysis]:
+        if not self.api_key:
+            return None
+
+        try:
+            prompt = self._build_prompt(symbol, stock_data)
+            text = self._call_llm(prompt)
+
+            if not text:
                 return None
-
-            result = response.json()
-            text = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
 
             lines = [l.strip() for l in text.split("\n") if l.strip()]
             setup = risk = rec = summary = None
@@ -108,7 +102,7 @@ Reply with EXACT format:
     def analyze_opportunities(self, stocks: List) -> Dict[str, AIAnalysis]:
         results = {}
         if not self.api_key:
-            print("No Gemini API key configured - skipping AI analysis")
+            print(f"No API key configured for {self.__class__.__name__} - skipping AI analysis")
             return results
 
         for stock in stocks[:10]:
@@ -127,30 +121,81 @@ Reply with EXACT format:
 
         return results
 
-    def _extract_field(self, text: str, field: str) -> Optional[str]:
-        for line in text.split("\n"):
-            if f"- {field}:" in line:
-                return line.split(f"- {field}:")[1].strip()
-        return None
 
-    def _extract_list(self, text: str, field: str) -> List[str]:
-        items = []
-        in_list = False
-        for line in text.split("\n"):
-            if f"- {field}:" in line:
-                in_list = True
-                content = line.split(f"- {field}:")[1].strip()
-                if content and content.lower() != "none":
-                    items.append(content)
-            elif in_list and line.strip().startswith("-"):
-                item = line.strip("- ").strip()
-                if item and item.lower() != "none":
-                    items.append(item)
-                if not line.strip().startswith("-"):
-                    break
-        return items[:3]
+class GeminiAnalyst(BaseAnalyst):
+    def __init__(self, api_key: str = None):
+        super().__init__()
+        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        self.model = "gemini-3.1-flash-lite-preview"
+
+    def _call_llm(self, prompt: str) -> Optional[str]:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "temperature": 0.7,
+                    "maxOutputTokens": 500,
+                }
+            }
+
+            response = requests.post(url, json=payload, timeout=30)
+            if response.status_code != 200:
+                print(f"Gemini API error: {response.status_code}")
+                return None
+
+            result = response.json()
+            return result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+        except Exception as e:
+            print(f"Gemini API call failed: {e}")
+            return None
+
+
+class ClaudeAnalyst(BaseAnalyst):
+    def __init__(self, api_key: str = None):
+        super().__init__()
+        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
+        self.model = "claude-opus-4-7"
+
+    def _call_llm(self, prompt: str) -> Optional[str]:
+        try:
+            url = "https://api.anthropic.com/v1/messages"
+            headers = {
+                "x-api-key": self.api_key,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": self.model,
+                "max_tokens": 500,
+                "temperature": 0.7,
+                "messages": [{"role": "user", "content": prompt}]
+            }
+
+            response = requests.post(url, json=payload, headers=headers, timeout=30)
+            if response.status_code != 200:
+                print(f"Claude API error: {response.status_code} - {response.text}")
+                return None
+
+            result = response.json()
+            return result.get("content", [{}])[0].get("text", "")
+        except Exception as e:
+            print(f"Claude API call failed: {e}")
+            return None
 
 
 def get_ai_analysis(stocks: List) -> Dict[str, AIAnalysis]:
-    analyst = GeminiAnalyst()
+    claude_key = os.getenv("ANTHROPIC_API_KEY")
+    gemini_key = os.getenv("GEMINI_API_KEY")
+
+    if claude_key:
+        analyst = ClaudeAnalyst()
+        print("Using Claude for AI analysis")
+    elif gemini_key:
+        analyst = GeminiAnalyst()
+        print("Using Gemini for AI analysis")
+    else:
+        print("No AI API keys configured - skipping AI analysis")
+        return {}
+
     return analyst.analyze_opportunities(stocks)
