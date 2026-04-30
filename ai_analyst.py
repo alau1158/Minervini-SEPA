@@ -194,8 +194,7 @@ class ClaudeAnalyst(BaseAnalyst):
             }
             payload = {
                 "model": self.model,
-                "max_tokens": 5000,
-                "temperature": 0.7,
+                "max_tokens": 2048,
                 "messages": [{"role": "user", "content": prompt}]
             }
 
