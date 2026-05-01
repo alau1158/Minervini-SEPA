@@ -62,7 +62,7 @@ class FinnhubClient:
 
     def get_earnings_calendar(self, symbol: str) -> Optional[Dict]:
         try:
-            url = f"{self.base_url}/calendar?symbol={symbol}&token={self.api_key}"
+            url = f"{self.base_url}/calendar/earnings?symbol={symbol}&token={self.api_key}"
             resp = requests.get(url, timeout=10)
             if resp.status_code == 200:
                 data = resp.json()
