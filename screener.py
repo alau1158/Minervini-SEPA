@@ -48,6 +48,11 @@ class StockAnalysis:
 
 class MinerviniScreener:
 
+    def __init__(self):
+        # Cache for audit_stock to avoid re-screening the full universe per audit.
+        # Keyed by index name ('sp500', 'sp400', 'sp600').
+        self._audit_cache: Dict[str, List[StockAnalysis]] = {}
+
     # ---------------------------------------------------------------------------
     # Moving averages
     # ---------------------------------------------------------------------------
@@ -60,9 +65,11 @@ class MinerviniScreener:
         ma200_series = close.rolling(window=200).mean()
         ma200 = ma200_series.iloc[-1]
 
-        # FIX #1 (partial): 200-MA trend check still uses 22 trading days — correct
+        # 200-MA trending up: require 2-month confirmation (today > 22d ago > 44d ago)
+        # This prevents single-point noise from passing a stock whose 200-MA is choppy.
         ma200_22d_ago = ma200_series.iloc[-22] if len(ma200_series) > 22 else ma200
-        ma200_trending_up = bool(ma200 > ma200_22d_ago)
+        ma200_44d_ago = ma200_series.iloc[-44] if len(ma200_series) > 44 else ma200_22d_ago
+        ma200_trending_up = bool(ma200 > ma200_22d_ago and ma200_22d_ago > ma200_44d_ago)
 
         return {
             'ma_50': float(ma50),
@@ -88,7 +95,7 @@ class MinerviniScreener:
 
         if pct_from_high <= 5 and ma_stack_aligned:
             return "base_breakout", current_price
-        elif pct_from_high <= 15 and ma_stack_aligned and pct_from_low >= 25:
+        elif pct_from_high <= 15 and ma_stack_aligned and pct_from_low >= 30:
             return "tight_consolidation", current_price
         elif ma_stack_aligned and ma_200_trending_up:
             if abs(current_price - ma_50) / ma_50 <= 0.03:
@@ -103,9 +110,16 @@ class MinerviniScreener:
     # ---------------------------------------------------------------------------
     def _get_rs_raw_performance(self, sp500_data: pd.DataFrame, stock_data: pd.DataFrame) -> float:
         """
-        Weighted relative performance vs S&P 500.
-        Weights: 40% (3 m), 20% (6 m), 20% (9 m), 20% (12 m)
+        Weighted relative performance vs benchmark (S&P 500 / 400 / 600).
+        Weights: 40% (3 m), 20% (6 m), 20% (9 m), 20% (12 m).
         Returns the raw outperformance figure — NOT a 1-99 score yet.
+
+        NOTE: The percentile rank derived from this is computed against the
+        screened universe (i.e., the chosen index), NOT the full broad market.
+        IBD's official RS Rating ranks vs. ~7,000 listed stocks. A stock at
+        the 60th percentile of the S&P 500 may rank far higher in the broad
+        market, and vice versa for small-cap screens. Treat the RS rating
+        here as an intra-index measure.
         """
         try:
             def get_return(data: pd.DataFrame, days: int) -> float:
@@ -155,16 +169,129 @@ class MinerviniScreener:
         distance_from_high = ((high_52wk - current_price) / high_52wk) * 100
         req['within_25pct_of_high'] = distance_from_high <= 25
 
-        # --- RS rating (8th criterion, counted once) ---
+        # --- 30% above 52-week low (canonical Minervini Trend Template criterion #6) ---
+        if low_52wk > 0:
+            pct_above_low = ((current_price - low_52wk) / low_52wk) * 100
+            req['30pct_above_52wk_low'] = pct_above_low >= 30
+        else:
+            req['30pct_above_52wk_low'] = False
+
+        # --- RS rating (Minervini's preferred 80+ threshold) ---
         req['rs_rating_above_80']   = rs_rating >= 80
 
-        # FIX #6 — denominator is 8 criteria total (7 MA/price + RS)
+        # Denominator is now 9 criteria total (7 MA/price + 30%-above-low + RS)
         score = sum(1 for v in req.values() if v)
 
-        # FIX #3 — hard binary: ALL criteria must pass
+        # Hard binary: ALL criteria must pass
         all_passed = all(req.values())
 
         return all_passed, req, score
+
+    # ---------------------------------------------------------------------------
+    # Earnings acceleration check (Minervini SEPA fundamental component)
+    # ---------------------------------------------------------------------------
+    def _check_earnings_acceleration(self, ticker: "yf.Ticker") -> bool:
+        """
+        Returns True if the last 3 quarters show YoY EPS growth that is
+        ACCELERATING (each quarter's YoY growth > prior quarter's YoY growth).
+        Fails open (returns False) when data is unavailable or insufficient.
+        """
+        try:
+            qe = None
+            # Prefer quarterly_income_stmt (newer yfinance), fall back to quarterly_earnings
+            try:
+                qis = ticker.quarterly_income_stmt
+                if qis is not None and not qis.empty and 'Diluted EPS' in qis.index:
+                    qe = qis.loc['Diluted EPS'].dropna()
+                elif qis is not None and not qis.empty and 'Basic EPS' in qis.index:
+                    qe = qis.loc['Basic EPS'].dropna()
+            except Exception:
+                qe = None
+
+            if qe is None or len(qe) < 7:
+                # Need at least 7 quarters to compute 3 YoY growth points
+                return False
+
+            # qe is sorted with most-recent first in yfinance; ensure that order
+            qe = qe.sort_index(ascending=False)
+            eps_vals = qe.values.astype(float)
+
+            # Compute YoY growth for the 3 most recent quarters
+            yoy = []
+            for i in range(3):
+                cur = eps_vals[i]
+                prior = eps_vals[i + 4]
+                if prior == 0 or np.isnan(prior) or np.isnan(cur):
+                    return False
+                # Use absolute value of prior to handle negative-to-positive turnarounds
+                growth = (cur - prior) / abs(prior)
+                yoy.append(growth)
+
+            # yoy[0] = most recent quarter, yoy[2] = oldest of the three
+            # Accelerating means: most recent > prior > older
+            return yoy[0] > yoy[1] > yoy[2]
+        except Exception:
+            return False
+
+    # ---------------------------------------------------------------------------
+    # Catalysts and news enrichment (best-effort, fails open)
+    # ---------------------------------------------------------------------------
+    def _get_next_earnings_date(self, ticker: "yf.Ticker") -> Optional[str]:
+        try:
+            cal = ticker.calendar
+            if cal is None:
+                return None
+            # yfinance returns a dict in newer versions
+            if isinstance(cal, dict):
+                ed = cal.get('Earnings Date')
+                if ed:
+                    if isinstance(ed, list) and len(ed) > 0:
+                        return str(ed[0])
+                    return str(ed)
+            # Older versions returned a DataFrame
+            elif hasattr(cal, 'loc') and 'Earnings Date' in getattr(cal, 'index', []):
+                val = cal.loc['Earnings Date']
+                if hasattr(val, 'iloc'):
+                    return str(val.iloc[0])
+                return str(val)
+        except Exception:
+            pass
+        return None
+
+    def _get_recent_news(self, ticker: "yf.Ticker", limit: int = 3) -> List[str]:
+        try:
+            news = ticker.news or []
+            titles = []
+            for item in news[:limit]:
+                # yfinance news item structure varies by version
+                title = item.get('title') if isinstance(item, dict) else None
+                if not title and isinstance(item, dict):
+                    content = item.get('content') or {}
+                    title = content.get('title') if isinstance(content, dict) else None
+                if title:
+                    titles.append(title)
+            return titles
+        except Exception:
+            return []
+
+    def _derive_catalyst(self, next_earnings_date: Optional[str], recent_news: List[str]) -> Optional[str]:
+        try:
+            if next_earnings_date:
+                # Try to parse and detect if within 2 weeks
+                for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%Y-%m-%dT%H:%M:%S'):
+                    try:
+                        dt = datetime.strptime(next_earnings_date.split('+')[0].strip(), fmt)
+                        days = (dt - datetime.now()).days
+                        if 0 <= days <= 14:
+                            return f"Upcoming earnings in {days}d"
+                        break
+                    except ValueError:
+                        continue
+            if recent_news:
+                return f"Recent news: {recent_news[0][:80]}"
+        except Exception:
+            pass
+        return None
 
     # ---------------------------------------------------------------------------
     # Per-stock analysis  (sp500_data passed in — FIX #4: fetched ONCE outside loop)
@@ -191,25 +318,31 @@ class MinerviniScreener:
             # Raw RS performance (percentile assigned later in find_top_opportunities)
             rs_raw = self._get_rs_raw_performance(sp500_data, hist)
 
-            eps             = info.get('epsTrailingTwelveMonths')
+            # yfinance field names: prefer canonical 'trailingEps', fall back for safety
+            eps             = info.get('trailingEps') or info.get('epsTrailingTwelveMonths')
             pe              = info.get('trailingPE')
             eps_growth      = info.get('earningsQuarterlyGrowth')
             revenue_growth  = info.get('revenueGrowth')
 
-            # FIX #5 — PE filter: skip PE check when EPS growth is exceptional (>40 %)
+            # Fundamental score (0-4) — Minervini SEPA fundamental components.
+            # PE cap removed: Minervini does not use a PE filter; high-growth winners
+            # frequently trade at PEs > 50 and should not be penalized.
             fundamental_score = 0
             if eps and eps > 0:
                 fundamental_score += 1
-            if pe:
-                if eps_growth and eps_growth > 0.40:
-                    # High-growth stock — Minervini explicitly ignores PE in this case
-                    fundamental_score += 1
-                elif 0 < pe < 50:
-                    fundamental_score += 1
             if eps_growth and eps_growth > 0.25:
                 fundamental_score += 1
             if revenue_growth and revenue_growth > 0.25:
                 fundamental_score += 1
+            # Earnings acceleration across last 3 quarters (Phase 4)
+            earnings_accelerating = self._check_earnings_acceleration(ticker)
+            if earnings_accelerating:
+                fundamental_score += 1
+
+            # Catalysts / news enrichment (best-effort)
+            next_earnings_date = self._get_next_earnings_date(ticker)
+            recent_news        = self._get_recent_news(ticker)
+            catalyst           = self._derive_catalyst(next_earnings_date, recent_news)
 
             change_pct = (
                 ((current_price - float(hist['Close'].iloc[-2])) / float(hist['Close'].iloc[-2])) * 100
@@ -246,8 +379,11 @@ class MinerviniScreener:
                 overall_score=0.0,      # placeholder
                 signals=[],
                 minervini_passed=False, # placeholder
+                next_earnings_date=next_earnings_date,
+                recent_news=recent_news,
                 entry_zone=entry_zone,
                 entry_price=entry_price,
+                catalyst=catalyst,
             )
         except Exception as e:
             logger.error(f"Error analyzing {symbol}: {e}")
@@ -305,23 +441,26 @@ class MinerviniScreener:
                 failed = [k for k, v in req.items() if not v]
                 signals.append(f"❌ Failed criteria: {', '.join(failed)}")
 
-            if score >= 7:
+            if score >= 8:
                 signals.append(f"Strong trend ({score}/9 criteria)")
             if r.rs_rating >= 80:
                 signals.append(f"High relative strength (RS: {r.rs_rating:.0f})")
             if req.get('200ma_trending_up'):
-                signals.append("200-day MA trending up")
+                signals.append("200-day MA trending up (2-month confirmed)")
             if r.eps_growth and r.eps_growth > 0.4:
                 signals.append(f"Exceptional EPS growth ({r.eps_growth * 100:.0f}%)")
+            if r.catalyst:
+                signals.append(r.catalyst)
 
             r.signals = signals
 
-            # FIX #3 — stocks that fail the template get overall_score = 0
-            # FIX #6 — RS contributes via its own term only (no double-count)
+            # Stocks that fail the template get overall_score = 0
+            # RS contributes via its own term only (no double-count)
+            # Denominators: trend = 9 criteria, fundamentals = 4 components
             if passed:
                 r.overall_score = (
-                    (score / 8)           * 50 +   # trend (8 criteria)
-                    (r.fundamental_score / 4) * 30 + # fundamentals
+                    (score / 9)           * 50 +   # trend (9 criteria)
+                    (r.fundamental_score / 4) * 30 + # fundamentals (EPS+, EPS gr, rev gr, accel)
                     (r.rs_rating / 100)   * 20       # RS percentile
                 )
             else:
@@ -421,6 +560,10 @@ class MinerviniScreener:
         """
         Print a full pass/fail breakdown for a single stock.
         Calculates RS rating by comparing against the appropriate index.
+
+        Uses an instance-level cache (`self._audit_cache`) so consecutive audits
+        against the same index reuse a single full screen rather than re-running
+        the full universe on every call.
         """
         # Determine which index to use based on benchmark_ticker
         if benchmark_ticker == "^GSPC":
@@ -432,24 +575,32 @@ class MinerviniScreener:
         else:
             index = 'sp500'
 
-        # Get the symbols for the index
-        if index == 'sp500':
-            symbols = self._get_sp500_symbols()
-        elif index == 'sp400':
-            symbols = self._get_sp400_symbols()
-        elif index == 'sp600':
-            symbols = self._get_sp600_symbols()
-        else:
-            symbols = self._get_sp500_symbols()
-
-        # Make sure our symbol is in the list
         symbol_upper = symbol.upper()
-        if symbol_upper not in [s.upper() for s in symbols]:
-            symbols.append(symbol_upper)
 
-        # Run the full screen to calculate proper RS rating
-        print(f"Calculating RS rating for {symbol_upper}...")
-        results = self.screen_candidates(symbols, benchmark_ticker)
+        # Use cached results if available for this index
+        results = self._audit_cache.get(index)
+
+        # If cache miss OR symbol not in cached results, run the full screen
+        if results is None or not any(r.symbol.upper() == symbol_upper for r in results):
+            # Get the symbols for the index
+            if index == 'sp500':
+                symbols = self._get_sp500_symbols()
+            elif index == 'sp400':
+                symbols = self._get_sp400_symbols()
+            elif index == 'sp600':
+                symbols = self._get_sp600_symbols()
+            else:
+                symbols = self._get_sp500_symbols()
+
+            # Make sure our symbol is in the list
+            if symbol_upper not in [s.upper() for s in symbols]:
+                symbols.append(symbol_upper)
+
+            print(f"Calculating RS rating for {symbol_upper} (running full {index} screen — cached for subsequent audits)...")
+            results = self.screen_candidates(symbols, benchmark_ticker)
+            self._audit_cache[index] = results
+        else:
+            print(f"Using cached {index} screen for {symbol_upper}...")
 
         # Find our stock
         result = next((r for r in results if r.symbol.upper() == symbol_upper), None)
@@ -471,13 +622,20 @@ class MinerviniScreener:
         print(f"  200-day MA : ${result.ma_200:.2f}   (price {'>' if result.price > result.ma_200 else '<'} MA)")
         print(f"  52wk High  : ${result.price_52wk_high:.2f}")
         print(f"  52wk Low   : ${result.price_52wk_low:.2f}")
+        pct_above_low = ((result.price - result.price_52wk_low) / result.price_52wk_low * 100) if result.price_52wk_low > 0 else 0.0
+        print(f"  Above Low  : {pct_above_low:.1f}%   (need \u2265 30%)")
         print(f"\n  Criteria breakdown:")
         for criterion, value in req.items():
             status = "✅" if value else "❌"
             print(f"    {status}  {criterion}")
-        print(f"\n  Score      : {score}/8")
-        print(f"  RS Rating  : {result.rs_rating:.0f}")
-        print(f"  RESULT     : {'✅ PASSED' if passed else '❌ FAILED'}")
+        print(f"\n  Trend Score       : {score}/9")
+        print(f"  RS Rating         : {result.rs_rating:.0f} (intra-{index} percentile)")
+        print(f"  Fundamental Score : {result.fundamental_score}/4 (EPS+, EPS gr, rev gr, accel)")
+        if result.next_earnings_date:
+            print(f"  Next Earnings     : {result.next_earnings_date}")
+        if result.catalyst:
+            print(f"  Catalyst          : {result.catalyst}")
+        print(f"  RESULT            : {'✅ PASSED' if passed else '❌ FAILED'}")
         print(f"{'='*55}\n")
 
 
