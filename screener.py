@@ -420,32 +420,50 @@ class MinerviniScreener:
     def audit_stock(self, symbol: str, benchmark_ticker: str = "^GSPC") -> None:
         """
         Print a full pass/fail breakdown for a single stock.
-        Useful for verifying DELL, MSFT, etc. against the template manually.
+        Calculates RS rating by comparing against the appropriate index.
         """
-        sp500_data = yf.Ticker(benchmark_ticker).history(period="2y")
-        result = self.analyze_stock(symbol, sp500_data)
+        # Determine which index to use based on benchmark_ticker
+        if benchmark_ticker == "^GSPC":
+            index = 'sp500'
+        elif benchmark_ticker == "^SP400":
+            index = 'sp400'
+        elif benchmark_ticker == "^SP600":
+            index = 'sp600'
+        else:
+            index = 'sp500'
+
+        # Get the symbols for the index
+        if index == 'sp500':
+            symbols = self._get_sp500_symbols()
+        elif index == 'sp400':
+            symbols = self._get_sp400_symbols()
+        elif index == 'sp600':
+            symbols = self._get_sp600_symbols()
+        else:
+            symbols = self._get_sp500_symbols()
+
+        # Make sure our symbol is in the list
+        symbol_upper = symbol.upper()
+        if symbol_upper not in [s.upper() for s in symbols]:
+            symbols.append(symbol_upper)
+
+        # Run the full screen to calculate proper RS rating
+        print(f"Calculating RS rating for {symbol_upper}...")
+        results = self.screen_candidates(symbols, benchmark_ticker)
+
+        # Find our stock
+        result = next((r for r in results if r.symbol.upper() == symbol_upper), None)
         if not result:
             print(f"Could not fetch data for {symbol}")
             return
 
-        # Assign a placeholder RS (we only have one stock, so percentile = 50)
-        result.rs_rating = 50.0
-
-        passed, req, score = self._check_trend_template(
-            ma_data={
-                'ma_50': result.ma_50,
-                'ma_150': result.ma_150,
-                'ma_200': result.ma_200,
-                'ma_200_trending_up': result.ma_200_trending_up,  # BUGFIX: use stored value
-            },
-            current_price=result.price,
-            high_52wk=result.price_52wk_high,
-            low_52wk=result.price_52wk_low,
-            rs_rating=result.rs_rating,
-        )
+        # Now print the audit breakdown
+        passed = result.minervini_passed
+        req = result.trend_requirements
+        score = result.trend_score
 
         print(f"\n{'='*55}")
-        print(f"  MINERVINI AUDIT — {symbol.upper()}")
+        print(f"  MINERVINI AUDIT — {symbol_upper}")
         print(f"{'='*55}")
         print(f"  Price      : ${result.price:.2f}")
         print(f"  50-day MA  : ${result.ma_50:.2f}   (price {'>' if result.price > result.ma_50 else '<'} MA)")
@@ -457,7 +475,8 @@ class MinerviniScreener:
         for criterion, value in req.items():
             status = "✅" if value else "❌"
             print(f"    {status}  {criterion}")
-        print(f"\n  Score      : {score}/9")
+        print(f"\n  Score      : {score}/8")
+        print(f"  RS Rating  : {result.rs_rating:.0f}")
         print(f"  RESULT     : {'✅ PASSED' if passed else '❌ FAILED'}")
         print(f"{'='*55}\n")
 
