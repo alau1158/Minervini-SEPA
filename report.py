@@ -94,45 +94,45 @@ class ReportGenerator:
 
             <h2>Top 10 Opportunities (Minervini Pass)</h2>
         """
-        
-            if opportunities:
-                html += """
-                <table>
-                    <tr>
-                        <th>Symbol</th>
-                        <th>Price</th>
-                        <th>Entry Zone</th>
-                        <th>RS Rating</th>
-                        <th>Trend Score</th>
-                        <th>22-Day ATR %</th>
-                        <th>Next Earnings</th>
-                        <th>AI Catalysts</th>
-                        <th>Entry Price</th>
-                    </tr>
+
+        if opportunities:
+            html += """
+            <table>
+                <tr>
+                    <th>Symbol</th>
+                    <th>Price</th>
+                    <th>Entry Zone</th>
+                    <th>RS Rating</th>
+                    <th>Trend Score</th>
+                    <th>22-Day ATR %</th>
+                    <th>Next Earnings</th>
+                    <th>AI Catalysts</th>
+                    <th>Entry Price</th>
+                </tr>
+            """
+            for opp in opportunities:
+                entry_zone = opp.entry_zone or "-"
+                earnings = opp.next_earnings_date or "-"
+                ai = ai_analysis.get(opp.symbol) if ai_analysis else None
+                if ai and ai.key_catalysts:
+                    catalysts_html = "<br>".join(ai.key_catalysts[:3])
+                else:
+                    catalysts_html = "-"
+                ai_entry = self.format_price(ai.estimated_entry_price) if ai and ai.estimated_entry_price else "-"
+                atr_pct = f"{opp.atr_pct:.2f}%" if opp.atr_pct else "-"
+                html += f"""
+                <tr>
+                    <td><strong>{opp.symbol}</strong><br><small>{opp.name}</small></td>
+                    <td>{self.format_price(opp.price)}</td>
+                    <td>{entry_zone}</td>
+                    <td>{opp.rs_rating:.0f}</td>
+                    <td>{opp.trend_score}/9</td>
+                    <td>{atr_pct}</td>
+                    <td>{earnings}</td>
+                    <td>{catalysts_html}</td>
+                    <td>{ai_entry}</td>
+                </tr>
                 """
-                for opp in opportunities:
-                    entry_zone = opp.entry_zone or "-"
-                    earnings = opp.next_earnings_date or "-"
-                    ai = ai_analysis.get(opp.symbol) if ai_analysis else None
-                    if ai and ai.key_catalysts:
-                        catalysts_html = "<br>".join(ai.key_catalysts[:3])
-                    else:
-                        catalysts_html = "-"
-                    ai_entry = self.format_price(ai.estimated_entry_price) if ai and ai.estimated_entry_price else "-"
-                    atr_pct = f"{opp.atr_pct:.2f}%" if opp.atr_pct else "-"
-                    html += f"""
-                    <tr>
-                        <td><strong>{opp.symbol}</strong><br><small>{opp.name}</small></td>
-                        <td>{self.format_price(opp.price)}</td>
-                        <td>{entry_zone}</td>
-                        <td>{opp.rs_rating:.0f}</td>
-                        <td>{opp.trend_score}/9</td>
-                        <td>{atr_pct}</td>
-                        <td>{earnings}</td>
-                        <td>{catalysts_html}</td>
-                        <td>{ai_entry}</td>
-                    </tr>
-                    """
             html += "</table>"
         else:
             html += "<p>No stocks currently passing the Minervini template.</p>"
