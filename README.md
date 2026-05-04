@@ -1,4 +1,4 @@
-# Long Term Investing - Mark Minervini Strategy
+# Minervini SEPA - Stock Screening & Portfolio Tracking
 
 Weekly stock screening and portfolio tracking using Mark Minervini's SEPA (Specific Entry Point Analysis) method.
 
