@@ -1,13 +1,16 @@
 # Long Term Investing - Mark Minervini Strategy
 
-Weekly stock screening and portfolio tracking using Mark Minervini's trend template method.
+Weekly stock screening and portfolio tracking using Mark Minervini's SEPA (Specific Entry Point Analysis) method.
 
 ## Features
 
-- **Mark Minervini Screening** - Identifies stocks passing the core trend template criteria
+- **Mark Minervini Screening** - Identifies stocks passing all 9 trend template criteria
 - **Portfolio Tracking** - Monitor your existing holdings against optimal conditions
 - **Weekly Reports** - Automated HTML reports emailed every Sunday at 9 AM
-- **Top Opportunities** - Finds 3-4 best stocks passing all criteria
+- **Top 10 Opportunities** - Finds best stocks passing all criteria with RS rating ranking
+- **Risk Management** - 22-day ATR% calculation for position sizing
+- **AI Analysis** - Gemini Pro AI analysis with entry prices and catalysts
+- **Multiple Index Support** - S&P 500, S&P 400 (Mid-Cap), S&P 600 (Small-Cap)
 
 ## Installation
 
@@ -72,33 +75,64 @@ python screener.py --audit AAPL
 python scheduler.py
 ```
 
-## Minervini Trend Template
+## Minervini Trend Template (9 Criteria)
 
 A stock passes when it meets ALL of:
 
-1. Price > 150-day MA > 200-day MA
-2. 50-day MA > 150-day MA > 200-day MA
-3. Price within 25% of 52-week high
-4. RS Rating > 80 (vs S&P 500)
-5. Positive EPS and revenue growth
+1. Current price > 50-day moving average
+2. Current price > 150-day moving average
+3. Current price > 200-day moving average
+4. 50-day MA > 150-day MA and 50-day MA > 200-day MA
+5. 150-day MA > 200-day MA
+6. 200-day MA trending up (2-month confirmed)
+7. Price within 25% of 52-week high
+8. Price ≥ 30% above 52-week low
+9. RS Rating ≥ 80 (vs S&P 500/index)
 
-## Report Statuses
+## Risk Management - Position Sizing
 
-- **OPTIMAL** - All criteria met, strong position
-- **GOOD** - Most criteria met, hold
-- **WEAK** - Review position
-- **SELL/WATCH** - No longer meets criteria
+The report includes **22-Day ATR%** for each stock to help with position sizing and stop loss placement.
+
+**Position Sizing Formula:**
+```
+Shares to Buy = 0.02(T) / (E)(1.5)(A)
+```
+
+Where:
+- **T** = Total portfolio size
+- **E** = Entry price
+- **A** = 22-Day ATR% (as decimal, e.g., 2.5% = 0.025)
+
+**Example:** For a $100,000 portfolio, entry at $50, ATR% of 2.5%:
+```
+Shares = 0.02($100,000) / ($50)(1.5)(0.025)
+       = 2,000 / 1.875
+       = ~1,066 shares
+```
+
+## Report Output
+
+Reports include:
+- **Symbol, Price, Entry Zone** - Stock info with suggested entry points
+- **RS Rating** - Weighted relative strength vs index (0-100)
+- **Trend Score** - Number of Minervini criteria passed (0-9)
+- **22-Day ATR %** - Volatility measure for position sizing
+- **Next Earnings** - Upcoming earnings date
+- **AI Catalysts** - Key catalysts identified by AI analysis
+- **Entry Price** - AI-suggested entry price based on technical setup
 
 ## Files
 
 | File | Description |
 |------|-------------|
 | `holdings.csv` | Your stock portfolio |
-| `screener.py` | Stock screening logic |
+| `screener.py` | Stock screening logic with Minervini trend template |
 | `portfolio.py` | Holdings management |
-| `report.py` | Report generator |
-| `notifier.py` | Email sender |
-| `scheduler.py` | Weekly scheduler |
+| `report.py` | HTML report generator with ATR% and position sizing |
+| `notifier.py` | Gmail SMTP email sender |
+| `scheduler.py` | Weekly cron job scheduler |
+| `api_clients.py` | External API clients (Finnhub, etc.) |
+| `ai_analyst.py` | AI analysis using Gemini Pro |
 
 ## Disclaimer
 
