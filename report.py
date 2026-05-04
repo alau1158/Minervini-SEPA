@@ -95,41 +95,44 @@ class ReportGenerator:
             <h2>Top 10 Opportunities (Minervini Pass)</h2>
         """
         
-        if opportunities:
-            html += """
-            <table>
-                <tr>
-                    <th>Symbol</th>
-                    <th>Price</th>
-                    <th>Entry Zone</th>
-                    <th>RS Rating</th>
-                    <th>Trend Score</th>
-                    <th>Next Earnings</th>
-                    <th>AI Catalysts</th>
-                    <th>Entry Price</th>
-                </tr>
-            """
-            for opp in opportunities:
-                entry_zone = opp.entry_zone or "-"
-                earnings = opp.next_earnings_date or "-"
-                ai = ai_analysis.get(opp.symbol) if ai_analysis else None
-                if ai and ai.key_catalysts:
-                    catalysts_html = "<br>".join(ai.key_catalysts[:3])
-                else:
-                    catalysts_html = "-"
-                ai_entry = self.format_price(ai.estimated_entry_price) if ai and ai.estimated_entry_price else "-"
-                html += f"""
-                <tr>
-                    <td><strong>{opp.symbol}</strong><br><small>{opp.name}</small></td>
-                    <td>{self.format_price(opp.price)}</td>
-                    <td>{entry_zone}</td>
-                    <td>{opp.rs_rating:.0f}</td>
-                    <td>{opp.trend_score}/8</td>
-                    <td>{earnings}</td>
-                    <td>{catalysts_html}</td>
-                    <td>{ai_entry}</td>
-                </tr>
+            if opportunities:
+                html += """
+                <table>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Price</th>
+                        <th>Entry Zone</th>
+                        <th>RS Rating</th>
+                        <th>Trend Score</th>
+                        <th>22-Day ATR %</th>
+                        <th>Next Earnings</th>
+                        <th>AI Catalysts</th>
+                        <th>Entry Price</th>
+                    </tr>
                 """
+                for opp in opportunities:
+                    entry_zone = opp.entry_zone or "-"
+                    earnings = opp.next_earnings_date or "-"
+                    ai = ai_analysis.get(opp.symbol) if ai_analysis else None
+                    if ai and ai.key_catalysts:
+                        catalysts_html = "<br>".join(ai.key_catalysts[:3])
+                    else:
+                        catalysts_html = "-"
+                    ai_entry = self.format_price(ai.estimated_entry_price) if ai and ai.estimated_entry_price else "-"
+                    atr_pct = f"{opp.atr_pct:.2f}%" if opp.atr_pct else "-"
+                    html += f"""
+                    <tr>
+                        <td><strong>{opp.symbol}</strong><br><small>{opp.name}</small></td>
+                        <td>{self.format_price(opp.price)}</td>
+                        <td>{entry_zone}</td>
+                        <td>{opp.rs_rating:.0f}</td>
+                        <td>{opp.trend_score}/9</td>
+                        <td>{atr_pct}</td>
+                        <td>{earnings}</td>
+                        <td>{catalysts_html}</td>
+                        <td>{ai_entry}</td>
+                    </tr>
+                    """
             html += "</table>"
         else:
             html += "<p>No stocks currently passing the Minervini template.</p>"
@@ -138,10 +141,33 @@ class ReportGenerator:
             <h2>Understanding the Report</h2>
             <ul>
                 <li><strong>RS Rating:</strong> Weighted relative strength vs S&P 500 (0-100, higher is better)</li>
-                <li><strong>Trend Score:</strong> Minervini template checks passed (0-8)</li>
+                <li><strong>Trend Score:</strong> Minervini template checks passed (0-9)</li>
                 <li><strong>AI Catalysts:</strong> Key catalysts identified by AI analysis (first 5 stocks)</li>
                 <li><strong>Entry Price:</strong> AI-suggested entry price based on technical setup</li>
             </ul>
+
+            <h2>Minervini Trend Template Criteria (9 Total)</h2>
+            <ol>
+                <li>Current price > 50-day moving average</li>
+                <li>Current price > 150-day moving average</li>
+                <li>Current price > 200-day moving average</li>
+                <li>50-day MA > 150-day MA and 50-day MA > 200-day MA</li>
+                <li>150-day MA > 200-day MA</li>
+                <li>200-day MA trending up (2-month confirmed)</li>
+                <li>Price within 25% of 52-week high</li>
+                <li>Price ≥30% above 52-week low</li>
+                <li>RS rating (intra-index percentile) ≥80</li>
+            </ol>
+
+            <h2>Position Sizing Formula (Risk Management)</h2>
+            <p><strong>Shares to Buy = 0.02(T) / (E)(1.5)(A)</strong></p>
+            <ul>
+                <li><strong>T</strong> = Total portfolio size</li>
+                <li><strong>E</strong> = Entry price</li>
+                <li><strong>A</strong> = 22-Day ATR % (as decimal, e.g., 2.5% = 0.025)</li>
+            </ul>
+            <p><em>Example: For a $100,000 portfolio, entry at $50, ATR% of 2.5%:<br>
+            Shares = 0.02($100,000) / ($50)(1.5)(0.025) = 2,000 / 1.875 = ~1,066 shares</em></p>
             
             <p style="margin-top: 30px; color: #7f8c8d; font-size: 12px;">
                 This report is generated based on Mark Minervini's stock selection method.

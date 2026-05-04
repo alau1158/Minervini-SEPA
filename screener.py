@@ -38,6 +38,7 @@ class StockAnalysis:
     overall_score: float
     signals: List[str]
     minervini_passed: bool    # FIX #3: explicit hard pass/fail flag
+    atr_pct: float = 0.0     # 22-day ATR as percentage of price
     # New fields for entry points, earnings, and catalysts
     next_earnings_date: Optional[str] = None
     recent_news: List[str] = None
@@ -77,6 +78,28 @@ class MinerviniScreener:
             'ma_200': float(ma200),
             'ma_200_trending_up': ma200_trending_up,
         }
+
+    def _calculate_atr_pct(self, data: pd.DataFrame, period: int = 22) -> float:
+        """Calculate ATR as percentage of current price."""
+        try:
+            high = data['High']
+            low = data['Low']
+            close = data['Close']
+
+            # Calculate True Range
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+            # Calculate ATR as moving average of True Range
+            atr = true_range.rolling(window=period).mean().iloc[-1]
+            current_price = close.iloc[-1]
+
+            # Return ATR as percentage of price
+            return float((atr / current_price) * 100)
+        except Exception:
+            return 0.0
 
     def _identify_entry_zone(
         self,
@@ -315,6 +338,9 @@ class MinerviniScreener:
 
             ma_data = self._calculate_moving_averages(hist)
 
+            # Calculate 22-day ATR as percentage of price
+            atr_pct = self._calculate_atr_pct(hist, period=22)
+
             # Raw RS performance (percentile assigned later in find_top_opportunities)
             rs_raw = self._get_rs_raw_performance(sp500_data, hist)
 
@@ -379,6 +405,7 @@ class MinerviniScreener:
                 overall_score=0.0,      # placeholder
                 signals=[],
                 minervini_passed=False, # placeholder
+                atr_pct=atr_pct,       # 22-day ATR as percentage of price
                 next_earnings_date=next_earnings_date,
                 recent_news=recent_news,
                 entry_zone=entry_zone,
