@@ -319,12 +319,18 @@ class MinerviniScreener:
     # ---------------------------------------------------------------------------
     # Per-stock analysis  (sp500_data passed in — FIX #4: fetched ONCE outside loop)
     # ---------------------------------------------------------------------------
-    def analyze_stock(self, symbol: str, sp500_data: pd.DataFrame) -> Optional[StockAnalysis]:
+    def analyze_stock(self, symbol: str, sp500_data: pd.DataFrame, reference_date: Optional[datetime] = None) -> Optional[StockAnalysis]:
         try:
             ticker = yf.Ticker(symbol)
             info   = ticker.info
 
-            hist = ticker.history(period="2y")
+            if reference_date:
+                end_date = reference_date.strftime('%Y-%m-%d')
+                start_date = (reference_date - timedelta(days=730)).strftime('%Y-%m-%d')
+                hist = ticker.history(start=start_date, end=end_date)
+            else:
+                hist = ticker.history(period="2y")
+
             if len(hist) < 200:
                 logger.warning(f"Insufficient data for {symbol}")
                 return None
@@ -421,15 +427,20 @@ class MinerviniScreener:
     # FIX #3 — overall_score is 0 for any stock that fails the template
     # FIX #4 — S&P 500 data fetched ONCE here, passed into every analyze_stock call
     # ---------------------------------------------------------------------------
-    def screen_candidates(self, symbols: List[str], benchmark_ticker: str = "^GSPC") -> List[StockAnalysis]:
-        # FIX #4: fetch benchmark data once
-        logger.info(f"Fetching {benchmark_ticker} benchmark data...")
-        sp500_data = yf.Ticker(benchmark_ticker).history(period="2y")
+    def screen_candidates(self, symbols: List[str], benchmark_ticker: str = "^GSPC", reference_date: Optional[datetime] = None) -> List[StockAnalysis]:
+        if reference_date:
+            end_date = reference_date.strftime('%Y-%m-%d')
+            start_date = (reference_date - timedelta(days=730)).strftime('%Y-%m-%d')
+            logger.info(f"Backtest mode: fetching data from {start_date} to {end_date}")
+            sp500_data = yf.Ticker(benchmark_ticker).history(start=start_date, end=end_date)
+        else:
+            logger.info(f"Fetching {benchmark_ticker} benchmark data...")
+            sp500_data = yf.Ticker(benchmark_ticker).history(period="2y")
 
         results: List[StockAnalysis] = []
         for symbol in symbols:
             logger.info(f"Analyzing {symbol}...")
-            analysis = self.analyze_stock(symbol, sp500_data)
+            analysis = self.analyze_stock(symbol, sp500_data, reference_date)
             if analysis:
                 results.append(analysis)
 
@@ -557,7 +568,7 @@ class MinerviniScreener:
     # Main entry point
     # index: 'sp500' (default), 'sp400', or 'sp600'
     # ---------------------------------------------------------------------------
-    def find_top_opportunities(self, minervini_pass_only: bool = True, limit: int = 10, index: str = 'sp500') -> List[StockAnalysis]:
+    def find_top_opportunities(self, minervini_pass_only: bool = True, limit: int = 10, index: str = 'sp500', reference_date: Optional[datetime] = None) -> List[StockAnalysis]:
         if index == 'sp400':
             logger.info("Fetching S&P 400 (Mid-Cap) symbols...")
             symbols = self._get_sp400_symbols()
@@ -573,7 +584,7 @@ class MinerviniScreener:
 
         logger.info(f"Loaded {len(symbols)} symbols")
 
-        results = self.screen_candidates(symbols, benchmark)
+        results = self.screen_candidates(symbols, benchmark, reference_date)
 
         if minervini_pass_only:
             results = [r for r in results if r.minervini_passed]
@@ -583,7 +594,7 @@ class MinerviniScreener:
     # ---------------------------------------------------------------------------
     # Convenience: audit a single stock with full breakdown (great for debugging)
     # ---------------------------------------------------------------------------
-    def audit_stock(self, symbol: str, benchmark_ticker: str = "^GSPC") -> None:
+    def audit_stock(self, symbol: str, benchmark_ticker: str = "^GSPC", reference_date: Optional[datetime] = None) -> None:
         """
         Print a full pass/fail breakdown for a single stock.
         Calculates RS rating by comparing against the appropriate index.
@@ -624,7 +635,7 @@ class MinerviniScreener:
                 symbols.append(symbol_upper)
 
             print(f"Calculating RS rating for {symbol_upper} (running full {index} screen — cached for subsequent audits)...")
-            results = self.screen_candidates(symbols, benchmark_ticker)
+            results = self.screen_candidates(symbols, benchmark_ticker, reference_date)
             self._audit_cache[index] = results
         else:
             print(f"Using cached {index} screen for {symbol_upper}...")
@@ -675,7 +686,17 @@ if __name__ == "__main__":
     parser.add_argument('-sp600', action='store_true', help='Screen S&P 600 (Small-Cap) stocks')
     parser.add_argument('--audit', type=str, help='Audit a specific stock symbol')
     parser.add_argument('--limit', type=int, default=10, help='Number of results to return (default: 10)')
+    parser.add_argument('--date', type=str, help='Run screener as of this date (YYYY-MM-DD) for backtesting')
     args = parser.parse_args()
+
+    reference_date = None
+    if args.date:
+        try:
+            reference_date = datetime.strptime(args.date, '%Y-%m-%d').date()
+            print(f"Time-travel mode: analyzing as of {reference_date}")
+        except ValueError:
+            print(f"Error: Invalid date format '{args.date}'. Use YYYY-MM-DD")
+            sys.exit(1)
 
     screener = MinerviniScreener()
 
@@ -693,16 +714,19 @@ if __name__ == "__main__":
     # Audit specific stock if requested
     if args.audit:
         benchmark_map = {'sp500': '^GSPC', 'sp400': '^SP400', 'sp600': '^SP600'}
-        screener.audit_stock(args.audit.upper(), benchmark_map[index])
+        ref_date = datetime.combine(reference_date, datetime.min.time()) if reference_date else None
+        screener.audit_stock(args.audit.upper(), benchmark_map[index], ref_date)
         sys.exit(0)
 
-    # Audit specific stocks to verify logic
-    for ticker in ["MU", "GOOG", "APH", "DELL", "MSFT"]:
-        screener.audit_stock(ticker)
+    # Audit specific stocks to verify logic (skip in backtest mode)
+    if not reference_date:
+        for ticker in ["MU", "GOOG", "APH", "DELL", "MSFT"]:
+            screener.audit_stock(ticker)
 
     # Full screen — only stocks passing ALL Minervini criteria
     print(f"\nRunning full {index_name} screen...\n")
-    top = screener.find_top_opportunities(minervini_pass_only=True, limit=args.limit, index=index)
+    ref_date = datetime.combine(reference_date, datetime.min.time()) if reference_date else None
+    top = screener.find_top_opportunities(minervini_pass_only=True, limit=args.limit, index=index, reference_date=ref_date)
     for i, s in enumerate(top, 1):
         print(f"{i:2}. {s.symbol:<6}  Score: {s.overall_score:.1f}  RS: {s.rs_rating:.0f}  "
               f"Price: ${s.price:.2f}  Signals: {'; '.join(s.signals)}")
