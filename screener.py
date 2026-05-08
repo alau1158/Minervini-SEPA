@@ -41,7 +41,7 @@ class StockAnalysis:
     atr_pct: float = 0.0     # 22-day ATR as percentage of price
     # New fields for entry points, earnings, and catalysts
     next_earnings_date: Optional[str] = None
-    recent_news: List[str] = None
+    news_articles: List[Dict] = None
     entry_zone: Optional[str] = None
     entry_price: Optional[float] = None
     catalyst: Optional[str] = None
@@ -281,23 +281,58 @@ class MinerviniScreener:
             pass
         return None
 
-    def _get_recent_news(self, ticker: "yf.Ticker", limit: int = 3) -> List[str]:
+    def _get_recent_news(self, ticker: "yf.Ticker", limit: int = 3) -> List[Dict]:
         try:
             news = ticker.news or []
-            titles = []
-            for item in news[:limit]:
-                # yfinance news item structure varies by version
-                title = item.get('title') if isinstance(item, dict) else None
-                if not title and isinstance(item, dict):
-                    content = item.get('content') or {}
-                    title = content.get('title') if isinstance(content, dict) else None
+            articles = []
+            now = datetime.now()
+
+            for item in news[:10]:
+                if not isinstance(item, dict):
+                    continue
+
+                content = item.get('content') or {}
+
+                title = content.get('title', '')
+                summary = content.get('summary', '')
+                pub_date_str = content.get('pubDate', '')
+
+                pub_date = None
+                if pub_date_str:
+                    try:
+                        pub_date = datetime.strptime(pub_date_str.replace('Z', '+00:00'), '%Y-%m-%dT%H:%M:%S+00:00')
+                    except ValueError:
+                        try:
+                            pub_date = datetime.strptime(pub_date_str.split('+')[0].strip(), '%Y-%m-%dT%H:%M:%S')
+                        except:
+                            pass
+
+                if pub_date and (now - pub_date).days >= 3:
+                    continue
+
+                provider = content.get('provider', {})
+                publisher = provider.get('displayName', '') if isinstance(provider, dict) else ''
+
+                click_through = content.get('clickThroughUrl') or {}
+                link = click_through.get('url', '') if isinstance(click_through, dict) else ''
+
                 if title:
-                    titles.append(title)
-            return titles
+                    articles.append({
+                        'title': title,
+                        'summary': summary,
+                        'link': link,
+                        'publisher': publisher,
+                        'pub_date': pub_date_str
+                    })
+
+                if len(articles) >= limit:
+                    break
+
+            return articles
         except Exception:
             return []
 
-    def _derive_catalyst(self, next_earnings_date: Optional[str], recent_news: List[str]) -> Optional[str]:
+    def _derive_catalyst(self, next_earnings_date: Optional[str], news_articles: List[Dict]) -> Optional[str]:
         try:
             if next_earnings_date:
                 # Try to parse and detect if within 2 weeks
@@ -310,8 +345,11 @@ class MinerviniScreener:
                         break
                     except ValueError:
                         continue
-            if recent_news:
-                return f"Recent news: {recent_news[0][:80]}"
+            if news_articles and len(news_articles) > 0:
+                first_article = news_articles[0]
+                title = first_article.get('title', '')
+                if title:
+                    return f"Recent news: {title[:80]}"
         except Exception:
             pass
         return None
@@ -373,8 +411,8 @@ class MinerviniScreener:
 
             # Catalysts / news enrichment (best-effort)
             next_earnings_date = self._get_next_earnings_date(ticker)
-            recent_news        = self._get_recent_news(ticker)
-            catalyst           = self._derive_catalyst(next_earnings_date, recent_news)
+            news_articles      = self._get_recent_news(ticker)
+            catalyst           = self._derive_catalyst(next_earnings_date, news_articles)
 
             change_pct = (
                 ((current_price - float(hist['Close'].iloc[-2])) / float(hist['Close'].iloc[-2])) * 100
@@ -413,7 +451,7 @@ class MinerviniScreener:
                 minervini_passed=False, # placeholder
                 atr_pct=atr_pct,       # 22-day ATR as percentage of price
                 next_earnings_date=next_earnings_date,
-                recent_news=recent_news,
+                news_articles=news_articles,
                 entry_zone=entry_zone,
                 entry_price=entry_price,
                 catalyst=catalyst,

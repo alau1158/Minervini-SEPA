@@ -32,6 +32,20 @@ class BaseAnalyst:
 
     def _build_prompt(self, symbol: str, stock_data: Dict) -> str:
         price = stock_data.get('price', 'N/A')
+        news_articles = stock_data.get('recent_news', [])
+
+        news_text = ""
+        if news_articles and len(news_articles) > 0:
+            news_lines = []
+            for article in news_articles[:3]:
+                title = article.get('title', 'N/A')
+                summary = article.get('summary', 'No summary available')
+                link = article.get('link', '')
+                news_lines.append(f"- {title}: {summary[:200]} [Link: {link}]")
+            news_text = "\n".join(news_lines)
+        else:
+            news_text = "No recent news available"
+
         return f"""Analyze {symbol} for investment using Minervini SEPA principles. Provide a specific entry price based on technical analysis (near support levels like 50-day MA or recent breakout levels).
 
 Data:
@@ -40,7 +54,10 @@ Data:
 - RS Rating: {stock_data.get('rs_rating', 'N/A')}
 - Trend Score: {stock_data.get('trend_score', 'N/A')}
 - Earnings: {stock_data.get('next_earnings', 'N/A')}
-- Recent News: {stock_data.get('recent_news', [])[:3]}
+- Recent News (last 3 days):
+{news_text}
+
+IMPORTANT: Only analyze news from the last 3 days. Ignore older news. Focus on how recent news events could impact the stock's technical setup and fundamental outlook.
 
 OUTPUT ONLY VALID JSON. NO markdown, NO code blocks, NO explanation:
 {{"SU": "exceptional/good/weak", "RI": "low/medium/high", "CA": ["catalyst1", "catalyst2", "catalyst3"], "EP": 123.45, "RE": "strong_buy/buy/hold/skip", "SM": "one sentence summary"}}"""
@@ -140,7 +157,7 @@ OUTPUT ONLY VALID JSON. NO markdown, NO code blocks, NO explanation:
                 "trend_score": getattr(stock, "trend_score", None),
                 "next_earnings": getattr(stock, "next_earnings_date", None),
                 "catalyst": getattr(stock, "catalyst", None),
-                "recent_news": getattr(stock, "recent_news", []) or [],
+                "recent_news": getattr(stock, "news_articles", []) or [],
             }
             analysis = self.analyze_stock(stock.symbol, stock_data)
             if analysis:

@@ -52,9 +52,10 @@ class ReportGenerator:
         for o in opportunities:
             if o.symbol in external_data:
                 data = external_data[o.symbol]
-                o.next_earnings_date = data.get("next_earnings")
-                o.recent_news = data.get("recent_news", [])
-                o.catalyst = data.get("catalyst")
+                if not o.next_earnings_date:
+                    o.next_earnings_date = data.get("next_earnings")
+                if not o.catalyst:
+                    o.catalyst = data.get("catalyst")
 
         print("\n=== Running AI Analysis (Gemini Pro) ===")
         ai_analysis = get_ai_analysis(opportunities)
