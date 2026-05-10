@@ -13,7 +13,6 @@ load_dotenv()
 from screener import MinerviniScreener, StockAnalysis
 from notifier import EmailNotifier
 from api_clients import fetch_stock_data
-from ai_analyst import get_ai_analysis
 
 
 class ReportGenerator:
@@ -56,9 +55,6 @@ class ReportGenerator:
                     o.next_earnings_date = data.get("next_earnings")
                 if not o.catalyst:
                     o.catalyst = data.get("catalyst")
-
-        print("\n=== Running AI Analysis (Gemini Pro) ===")
-        ai_analysis = get_ai_analysis(opportunities)
 
         html = f"""
         <html>
@@ -107,19 +103,13 @@ class ReportGenerator:
                     <th>Trend Score</th>
                     <th>22-Day ATR %</th>
                     <th>Next Earnings</th>
-                    <th>AI Catalysts</th>
-                    <th>Entry Price</th>
+                    <th>VCP Pattern</th>
                 </tr>
             """
             for opp in opportunities:
                 entry_zone = opp.entry_zone or "-"
                 earnings = opp.next_earnings_date or "-"
-                ai = ai_analysis.get(opp.symbol) if ai_analysis else None
-                if ai and ai.key_catalysts:
-                    catalysts_html = "<br>".join(ai.key_catalysts[:3])
-                else:
-                    catalysts_html = "-"
-                ai_entry = self.format_price(ai.estimated_entry_price) if ai and ai.estimated_entry_price else "-"
+                vcp_pattern = "✅" if opp.vcp_pattern_detected else "❌"
                 atr_pct = f"{opp.atr_pct:.2f}%" if opp.atr_pct else "-"
                 html += f"""
                 <tr>
@@ -130,8 +120,7 @@ class ReportGenerator:
                     <td>{opp.trend_score}/9</td>
                     <td>{atr_pct}</td>
                     <td>{earnings}</td>
-                    <td>{catalysts_html}</td>
-                    <td>{ai_entry}</td>
+                    <td>{vcp_pattern}</td>
                 </tr>
                 """
             html += "</table>"
@@ -143,8 +132,7 @@ class ReportGenerator:
             <ul>
                 <li><strong>RS Rating:</strong> Weighted relative strength vs S&P 500 (0-100, higher is better)</li>
                 <li><strong>Trend Score:</strong> Minervini template checks passed (0-9)</li>
-                <li><strong>AI Catalysts:</strong> Key catalysts identified by AI analysis (first 5 stocks)</li>
-                <li><strong>Entry Price:</strong> AI-suggested entry price based on technical setup</li>
+                <li><strong>VCP Pattern:</strong> Volatility Contraction Pattern detected (✅ = detected, ❌ = not detected)</li>
             </ul>
 
             <h2>Minervini Trend Template Criteria (9 Total)</h2>

@@ -45,6 +45,11 @@ class StockAnalysis:
     entry_zone: Optional[str] = None
     entry_price: Optional[float] = None
     catalyst: Optional[str] = None
+    # VCP Pattern Detection fields
+    vcp_pattern_detected: bool = False
+    vcp_low_price: Optional[float] = None
+    vcp_legs: int = 0
+    vcp_contraction_pct: Optional[float] = None
 
 
 class MinerviniScreener:
@@ -100,6 +105,79 @@ class MinerviniScreener:
             return float((atr / current_price) * 100)
         except Exception:
             return 0.0
+
+    def _detect_vcp_pattern(self, data: pd.DataFrame, lookback_days: int = 30) -> Dict:
+        """
+        Detect Volatility Contraction Pattern (VCP) in the most recent price action.
+        
+        VCP is characterized by:
+        - 2+ contraction legs (periods of declining volatility)
+        - Each leg shows price tightening (daily range contracting)
+        
+        Returns dict with:
+        - vcp_detected: bool
+        - vcp_low: lowest price in the lookback period (actual recent low)
+        - legs: number of contraction legs found
+        - contraction_pct: % contraction from high
+        """
+        try:
+            # Use last N days of data for VCP detection
+            recent_data = data.iloc[-lookback_days:].copy()
+            
+            if len(recent_data) < 10:
+                return {'vcp_detected': False, 'vcp_low': None, 'legs': 0, 'contraction_pct': None}
+            
+            # VCP Low = actual lowest price in the lookback period
+            vcp_low = float(recent_data['Low'].min())
+            
+            # Calculate daily range as percentage of close
+            daily_range = (recent_data['High'] - recent_data['Low']) / recent_data['Close'] * 100
+            
+            # Calculate 5-day rolling average of range to smooth noise
+            range_smooth = daily_range.rolling(window=5, min_periods=3).mean()
+            
+            # Find local minima in the smoothed range (contraction points)
+            min_periods = 5
+            local_mins = []
+            for i in range(min_periods, len(range_smooth) - min_periods):
+                current = range_smooth.iloc[i]
+                if current < range_smooth.iloc[i-1] and current < range_smooth.iloc[i+1]:
+                    local_mins.append((i, current))
+            
+            if len(local_mins) < 2:
+                return {'vcp_detected': False, 'vcp_low': vcp_low, 'legs': 0, 'contraction_pct': None}
+            
+            # Find the two most recent local minima (last contraction leg)
+            last_two_mins = local_mins[-2:]
+            
+            # Get the high of range between these two minima (peak of volatility)
+            start_idx = last_two_mins[0][0]
+            end_idx = last_two_mins[-1][0]
+            
+            if start_idx >= end_idx or end_idx >= len(recent_data):
+                return {'vcp_detected': False, 'vcp_low': vcp_low, 'legs': len(local_mins), 'contraction_pct': None}
+            
+            # Calculate how much the range contracted between the two minima
+            range_high = max(last_two_mins[0][1], last_two_mins[1][1])
+            range_low = min(last_two_mins[0][1], last_two_mins[1][1])
+            
+            if range_high > 0:
+                contraction_pct = ((range_high - range_low) / range_high) * 100
+            else:
+                contraction_pct = 0
+            
+            # Require at least 10% contraction to count as VCP
+            vcp_detected = contraction_pct >= 10
+            
+            return {
+                'vcp_detected': vcp_detected,
+                'vcp_low': vcp_low,
+                'legs': len(local_mins),
+                'contraction_pct': round(contraction_pct, 1) if contraction_pct > 0 else None
+            }
+        except Exception as e:
+            logger.debug(f"VCP detection failed: {e}")
+            return {'vcp_detected': False, 'vcp_low': None, 'legs': 0, 'contraction_pct': None}
 
     def _identify_entry_zone(
         self,
@@ -385,6 +463,9 @@ class MinerviniScreener:
             # Calculate 22-day ATR as percentage of price
             atr_pct = self._calculate_atr_pct(hist, period=22)
 
+            # Detect VCP pattern (look back 30 days)
+            vcp_result = self._detect_vcp_pattern(hist, lookback_days=30)
+
             # Raw RS performance (percentile assigned later in find_top_opportunities)
             rs_raw = self._get_rs_raw_performance(sp500_data, hist)
 
@@ -455,6 +536,10 @@ class MinerviniScreener:
                 entry_zone=entry_zone,
                 entry_price=entry_price,
                 catalyst=catalyst,
+                vcp_pattern_detected=vcp_result['vcp_detected'],
+                vcp_low_price=vcp_result['vcp_low'],
+                vcp_legs=vcp_result['legs'],
+                vcp_contraction_pct=vcp_result['contraction_pct'],
             )
         except Exception as e:
             logger.error(f"Error analyzing {symbol}: {e}")

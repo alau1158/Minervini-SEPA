@@ -9,7 +9,7 @@ Weekly stock screening and portfolio tracking using Mark Minervini's SEPA (Speci
 - **Weekly Reports** - Automated HTML reports emailed every Sunday at 9 AM
 - **Top 10 Opportunities** - Finds best stocks passing all criteria with RS rating ranking
 - **Risk Management** - 22-day ATR% calculation for position sizing
-- **AI Analysis** - Gemini Pro AI analysis with entry prices and catalysts
+- **VCP Pattern Detection** - Detects Volatility Contraction Patterns (Mark Minervini strategy)
 - **Multiple Index Support** - S&P 500, S&P 400 (Mid-Cap), S&P 600 (Small-Cap)
 
 ## Installation
@@ -110,6 +110,27 @@ Shares = 0.02($100,000) / ($50)(1.5)(0.025)
        = ~1,066 shares
 ```
 
+## Entry Zones
+
+The report identifies different entry point types:
+
+| Zone | Description |
+|------|-------------|
+| **base_breakout** | Price within 5% of 52-week high - stock is at new highs, ready to break out |
+| **tight_consolidation** | Price within 15% of high but >5%, 30%+ above low - consolidating after run-up |
+| **at_50ma_pullback** | Price within 3% of 50-day moving average - buying at support |
+| **at_150ma_pullback** | Price within 3% of 150-day moving average - buying at support |
+
+**Best Setup:** base_breakout with VCP Pattern ✅ (confirmed strength + volatility contraction)
+
+## VCP Pattern (Volatility Contraction Pattern)
+
+VCP is a key Minervini concept where stock price consolidates with declining volatility before breakout.
+
+- **Detection:** Looks for 2+ contraction legs in last 30 days with 10%+ volatility contraction
+- **✅ = detected** - Stock is in/fresh out of consolidation (Stage 2)
+- **❌ = not detected** - Stock may be in Stage 3 breakout or no clear pattern
+
 ## Report Output
 
 Reports include:
@@ -118,8 +139,7 @@ Reports include:
 - **Trend Score** - Number of Minervini criteria passed (0-9)
 - **22-Day ATR %** - Volatility measure for position sizing
 - **Next Earnings** - Upcoming earnings date
-- **AI Catalysts** - Key catalysts identified by AI analysis
-- **Entry Price** - AI-suggested entry price based on technical setup
+- **VCP Pattern** - Volatility Contraction Pattern detected (✅ = detected, ❌ = not detected)
 
 ## Files
 
@@ -132,7 +152,6 @@ Reports include:
 | `notifier.py` | Gmail SMTP email sender |
 | `scheduler.py` | Weekly cron job scheduler |
 | `api_clients.py` | External API clients (Finnhub, etc.) |
-| `ai_analyst.py` | AI analysis using Gemini Pro |
 
 ## Disclaimer
 
