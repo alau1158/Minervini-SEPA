@@ -13,6 +13,7 @@ load_dotenv()
 from screener import MinerviniScreener, StockAnalysis
 from notifier import EmailNotifier
 from api_clients import fetch_stock_data
+from ai_analyst import get_ai_analysis
 
 
 class ReportGenerator:
@@ -56,6 +57,9 @@ class ReportGenerator:
                 if not o.catalyst:
                     o.catalyst = data.get("catalyst")
 
+        print("\n=== Running AI Analysis ===")
+        ai_analysis = get_ai_analysis(opportunities)
+
         html = f"""
         <html>
         <head>
@@ -77,6 +81,9 @@ class ReportGenerator:
                 .ai-buy {{ color: #27ae60; font-weight: bold; }}
                 .ai-hold {{ color: #f39c12; }}
                 .ai-skip {{ color: #e74c3c; }}
+                .sentiment-positive {{ color: #27ae60; font-weight: bold; }}
+                .sentiment-negative {{ color: #e74c3c; font-weight: bold; }}
+                .sentiment-neutral {{ color: #f39c12; }}
             </style>
         </head>
         <body>
@@ -104,6 +111,7 @@ class ReportGenerator:
                     <th>22-Day ATR %</th>
                     <th>Next Earnings</th>
                     <th>VCP Pattern</th>
+                    <th>AI Sentiment</th>
                 </tr>
             """
             for opp in opportunities:
@@ -111,6 +119,17 @@ class ReportGenerator:
                 earnings = opp.next_earnings_date or "-"
                 vcp_pattern = "✅" if opp.vcp_pattern_detected else "❌"
                 atr_pct = f"{opp.atr_pct:.2f}%" if opp.atr_pct else "-"
+                ai = ai_analysis.get(opp.symbol) if ai_analysis else None
+                if ai and ai.sentiment:
+                    sent = ai.sentiment.lower()
+                    if sent == "positive":
+                        sentiment = '<span class="sentiment-positive">🟢 Positive</span>'
+                    elif sent == "negative":
+                        sentiment = '<span class="sentiment-negative">🔴 Negative</span>'
+                    else:
+                        sentiment = '<span class="sentiment-neutral">🟡 Neutral</span>'
+                else:
+                    sentiment = "-"
                 html += f"""
                 <tr>
                     <td><strong>{opp.symbol}</strong><br><small>{opp.name}</small></td>
@@ -121,6 +140,7 @@ class ReportGenerator:
                     <td>{atr_pct}</td>
                     <td>{earnings}</td>
                     <td>{vcp_pattern}</td>
+                    <td>{sentiment}</td>
                 </tr>
                 """
             html += "</table>"
@@ -133,6 +153,7 @@ class ReportGenerator:
                 <li><strong>RS Rating:</strong> Weighted relative strength vs S&P 500 (0-100, higher is better)</li>
                 <li><strong>Trend Score:</strong> Minervini template checks passed (0-9)</li>
                 <li><strong>VCP Pattern:</strong> Volatility Contraction Pattern detected (✅ = detected, ❌ = not detected)</li>
+                <li><strong>AI Sentiment:</strong> Sentiment based on earnings and news (🟢 Positive / 🟡 Neutral / 🔴 Negative)</li>
             </ul>
 
             <h2>Minervini Trend Template Criteria (9 Total)</h2>

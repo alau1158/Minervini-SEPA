@@ -17,6 +17,7 @@ class AIAnalysis:
     key_catalysts: List[str]
     recommendation: str
     estimated_entry_price: Optional[float] = None
+    sentiment: str = "-"  # positive/negative/neutral
 
 
 class BaseAnalyst:
@@ -28,7 +29,7 @@ class BaseAnalyst:
 
     def _get_mock_response(self, symbol: str) -> str:
         """Return mock AI response in JSON format for testing."""
-        return f'{{"SU": "good", "RI": "medium", "CA": ["Mock catalyst 1 for {symbol}", "Mock catalyst 2 for {symbol}"], "EP": 100.00, "RE": "buy", "SM": "Mock summary for {symbol} indicating potential growth following Minervini principles."}}'
+        return f'{{"SE": "positive", "CA": ["Mock catalyst 1 for {symbol}", "Mock catalyst 2 for {symbol}"], "SM": "Mock sentiment for {symbol}: positive earnings and news outlook."}}'
 
     def _build_prompt(self, symbol: str, stock_data: Dict) -> str:
         price = stock_data.get('price', 'N/A')
@@ -46,21 +47,20 @@ class BaseAnalyst:
         else:
             news_text = "No recent news available"
 
-        return f"""Analyze {symbol} for investment using Minervini SEPA principles. Provide a specific entry price based on technical analysis (near support levels like 50-day MA or recent breakout levels).
+        earnings_date = stock_data.get('next_earnings', 'N/A')
+
+        return f"""Analyze recent earnings and news for {symbol} to determine the sentiment (positive, negative, or neutral).
 
 Data:
 - Current Price: ${price}
-- Entry Zone: {stock_data.get('entry_zone', 'N/A')}
-- RS Rating: {stock_data.get('rs_rating', 'N/A')}
-- Trend Score: {stock_data.get('trend_score', 'N/A')}
-- Earnings: {stock_data.get('next_earnings', 'N/A')}
-- Recent News (last 3 days):
+- Next Earnings Date: {earnings_date}
+- Recent News:
 {news_text}
 
-IMPORTANT: Only analyze news from the last 3 days. Ignore older news. Focus on how recent news events could impact the stock's technical setup and fundamental outlook.
+TASK: Based on the earnings outlook and recent news, determine if the sentiment is POSITIVE (earnings beat/raise guidance, positive catalysts), NEGATIVE (earnings miss/lower guidance, negative news), or NEUTRAL (no clear direction, mixed news).
 
 OUTPUT ONLY VALID JSON. NO markdown, NO code blocks, NO explanation:
-{{"SU": "exceptional/good/weak", "RI": "low/medium/high", "CA": ["catalyst1", "catalyst2", "catalyst3"], "EP": 123.45, "RE": "strong_buy/buy/hold/skip", "SM": "one sentence summary"}}"""
+{{"SE": "positive/negative/neutral", "CA": ["key catalyst or news event 1", "key catalyst or news event 2"], "SM": "one sentence sentiment summary"}}"""
 
     def _call_llm(self, prompt: str) -> Optional[str]:
         raise NotImplementedError("Subclasses must implement _call_llm")
@@ -92,52 +92,36 @@ OUTPUT ONLY VALID JSON. NO markdown, NO code blocks, NO explanation:
 
             try:
                 data = json.loads(json_text)
-                setup = data.get("SU")
-                risk = data.get("RI")
+                sentiment = data.get("SE", "neutral")
                 catalysts = data.get("CA", [])
                 if not isinstance(catalysts, list):
                     catalysts = [catalysts] if catalysts else []
-                entry_price = data.get("EP")
-                if entry_price is not None:
-                    try:
-                        entry_price = float(str(entry_price).replace("$", ""))
-                    except:
-                        entry_price = None
-                rec = data.get("RE")
                 summary = data.get("SM")
             except json.JSONDecodeError:
                 # Fallback to line parsing if JSON fails
                 lines = [l.strip() for l in text.split("\n") if l.strip()]
-                setup = risk = rec = summary = None
+                sentiment = "neutral"
                 catalysts = []
-                entry_price = None
+                summary = None
                 for line in lines:
-                    if line.startswith("- SU:"):
-                        setup = line.split("SU:")[1].strip()
-                    elif line.startswith("- RI:"):
-                        risk = line.split("RI:")[1].strip()
+                    if line.startswith("- SE:"):
+                        sentiment = line.split("SE:")[1].strip()
                     elif line.startswith("- CA:"):
                         catalysts.append(line.split("CA:")[1].strip())
-                    elif line.startswith("- EP:"):
-                        try:
-                            entry_price = float(line.split("EP:")[1].strip().replace("$", ""))
-                        except:
-                            entry_price = None
-                    elif line.startswith("- RE:"):
-                        rec = line.split("RE:")[1].strip()
                     elif line.startswith("- SM:"):
                         summary = line.split("SM:")[1].strip()
 
-            print(f"Parsed for {symbol}: setup={setup}, risk={risk}, rec={rec}, summary={summary}, catalysts={catalysts}, entry_price={entry_price}")
+            print(f"Parsed for {symbol}: sentiment={sentiment}, catalysts={catalysts}, summary={summary}")
 
             return AIAnalysis(
                 symbol=symbol,
                 summary=summary or "Analysis unavailable",
-                setup_quality=setup or "N/A",
-                risk_level=risk or "N/A",
+                setup_quality="N/A",
+                risk_level="N/A",
                 key_catalysts=catalysts or [],
-                recommendation=rec or "skip",
-                estimated_entry_price=entry_price,
+                recommendation="N/A",
+                estimated_entry_price=None,
+                sentiment=sentiment,
             )
         except Exception as e:
             print(f"AI analysis failed for {symbol}: {e}")
