@@ -148,6 +148,106 @@ A VCP is Minervini's preferred base — price consolidates in a series of progre
 4. **Set a hard stop.** Place stop-loss just below the recent swing low (or 50-MA for non-VCP setups). Max risk per trade = 1–2% of portfolio.
 5. **Take profits on extended stocks.** When a held position becomes EXTENDED, trim 1/3–1/2 into strength. Re-enter on the next valid base.
 
+## Worked Examples — Reading the Report in Practice
+
+The status column is a **filter, not a decision.** Always cross-check the contraction sequence, the volume dry-up flag, and the risk math before placing an order. Below are two real examples that show how to interpret the report correctly.
+
+### Example 1 — ATI: clean SETUP (this is what you want)
+
+**Report values:**
+| Field | Value |
+|-------|-------|
+| Price | $158.39 |
+| % from 50-MA | +3.2% |
+| Contractions | 16.6% → 10.9% → 10.4% |
+| VCP | ✅ Vol dry-up |
+| Pivot (Buy) | $165.28 |
+| Stop (Recent Low) | $148.04 |
+
+**Why this is a textbook SETUP:**
+- **Contractions narrow:** 16.6 → 10.9 → 10.4. Each leg shallower than the last → supply being absorbed.
+- **Volume dry-up confirmed:** Sellers exhausted on the final leg.
+- **Sitting on 50-MA support:** +3.2% above a rising 50-MA — not extended, room to run.
+- **Clean pivot and stop levels:** $165.28 resistance ceiling, $148.04 swing-low floor.
+
+**Order plan:**
+```
+Buy Stop Limit (Good-Til-Cancelled)
+  Stop trigger:  $165.38   (pivot + $0.10 cushion)
+  Limit price:   $168.00   (~1.6% above pivot — never chase >5%)
+
+After fill, place Sell Stop:
+  Trigger:       $148.04   (recent swing low)
+```
+
+**Risk math:**
+```
+Entry:           $165.38
+Stop:            $148.04
+Risk per share:  $17.34  (10.5%)
+```
+
+10.5% per-share risk is wider than Minervini's preferred 5–8%, so **size the position smaller** to keep portfolio risk at 1–2%. For a $100k portfolio with 1.5% max risk = $1,500 ÷ $17.34 ≈ **86 shares max** (~$14k position). Use the ATR-based position-sizing formula above for a more precise number.
+
+**Pre-trade checklist:**
+- ☐ No earnings within ~2 weeks (binary event = not a technical setup)
+- ☐ Broad market (S&P 500 / NASDAQ) above its own 50-MA and not whipsawing
+- ☐ Breakout day volume ≥ 1.4× the 50-day average (if not, exit on weakness — low-quality breakout)
+
+---
+
+### Example 2 — FN: misleading NEAR 50-MA (skip this)
+
+**Report values:**
+| Field | Value |
+|-------|-------|
+| Price | $612.28 |
+| % from 50-MA | +3.6% |
+| Contractions | **8.6% → 17.3%** |
+| Status | ✅ NEAR 50-MA |
+
+**Why this is NOT actionable despite the green check:**
+
+The screener flags NEAR 50-MA based purely on distance from a rising 50-MA. It does **not** cross-check that the base is healthy. FN looks fine on the surface but the contraction sequence is **backwards**:
+
+- Valid VCP: each leg **shallower** than the last (volatility contracting)
+- FN: leg 2 (17.3%) is **2× deeper** than leg 1 (8.6%) → volatility **expanding**
+
+Expanding contractions = sellers gaining strength, not losing it. In Minervini's framework this is a **failed base** or early Stage 3 → Stage 4 distribution. A pivot break here would likely be a false breakout because supply has *not* been exhausted.
+
+**Risk math is also poor:**
+```
+Hypothetical entry:   $612
+Stop (recent low):    ~$506  (612 × (1 − 0.173))
+Risk per share:       ~17%  (well above Minervini's 5–8% max)
+```
+
+**Action: PASS. Watch only.**
+
+**Triggers to revisit FN:**
+
+| Scenario | Signal | Action |
+|----------|--------|--------|
+| **A — Base re-forms tighter** | New leg ≤ ~8% over 2–3 weeks on declining volume | Watch for VCP to re-form → SETUP status |
+| **B — Reversal at 50-MA** | Green reversal bar on volume ≥ 1.5× avg, close in upper third of range | Tactical entry with stop just below the reversal day's low (~3–5% risk) |
+| **C — 50-MA breaks** | Close below 50-MA on above-avg volume | **Abandon.** Reset clock — need a full new base (4–6+ weeks) before re-evaluating |
+
+---
+
+### The takeaway
+
+Both stocks show **+~3% from 50-MA** and a green status, but they are **opposite trades**:
+
+| | ATI | FN |
+|---|-----|-----|
+| Contractions | 16.6 → 10.9 → 10.4 ✅ narrowing | 8.6 → 17.3 ❌ widening |
+| Vol dry-up | ✅ Confirmed | Not present |
+| Base quality | Healthy | Broken |
+| Risk/reward | ~10% stop, defined pivot | ~17% stop, no clean trigger |
+| **Verdict** | **Place buy stop at pivot** | **Skip — watch only** |
+
+**Rule of thumb:** Before acting on any NEAR 50-MA or SETUP signal, look at the **Contractions** column. If the numbers don't get smaller from left to right, the base is broken — no matter what the status says.
+
 ## Report Columns
 
 | Column | Description |
