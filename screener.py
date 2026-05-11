@@ -607,7 +607,7 @@ class MinerviniScreener:
                         except:
                             pass
 
-                if pub_date and (now - pub_date).days >= 3:
+                if pub_date and (now - pub_date).days >= 7:
                     continue
 
                 provider = content.get('provider', {})
