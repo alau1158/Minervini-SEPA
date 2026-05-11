@@ -45,11 +45,23 @@ class StockAnalysis:
     entry_zone: Optional[str] = None
     entry_price: Optional[float] = None
     catalyst: Optional[str] = None
-    # VCP Pattern Detection fields
+    # VCP Pattern Detection fields (Minervini SEPA-style)
     vcp_pattern_detected: bool = False
-    vcp_low_price: Optional[float] = None
-    vcp_legs: int = 0
-    vcp_contraction_pct: Optional[float] = None
+    vcp_pivot_price: Optional[float] = None        # breakout trigger = most recent swing high
+    vcp_low_price: Optional[float] = None          # lowest swing low in the base
+    vcp_recent_low: Optional[float] = None         # MOST RECENT swing low — use for stop-loss
+    vcp_base_high: Optional[float] = None          # high that started the base
+    vcp_base_depth_pct: Optional[float] = None     # full base depth (high -> lowest low)
+    vcp_legs: int = 0                              # number of contractions detected
+    vcp_contractions: Optional[List[float]] = None # depth % of each contraction, oldest -> newest
+    vcp_final_contraction_pct: Optional[float] = None  # tightest/last contraction depth
+    vcp_volume_dryup: bool = False                 # final leg shows volume dry-up
+    vcp_base_length_days: int = 0                  # trading days from base high to today
+    vcp_breakout: bool = False                     # price closed above pivot on volume
+    # Extension warnings — Minervini's "don't chase extended stocks" rule
+    pct_from_50ma: float = 0.0                     # % distance from 50-day MA
+    extended_from_50ma: bool = False               # > 25% above 50-MA = climax/sell zone
+    actionable: bool = False                       # passes template AND not extended AND has VCP
 
 
 class MinerviniScreener:
@@ -106,78 +118,288 @@ class MinerviniScreener:
         except Exception:
             return 0.0
 
-    def _detect_vcp_pattern(self, data: pd.DataFrame, lookback_days: int = 30) -> Dict:
+    # ---------------------------------------------------------------------------
+    # VCP Pattern Detection — Minervini SEPA methodology
+    # ---------------------------------------------------------------------------
+    #
+    # Per Mark Minervini (Trade Like a Stock Market Wizard / Think & Trade Like a
+    # Champion), a Volatility Contraction Pattern is defined by:
+    #
+    #   1. A prior uptrend (Stage 2) — gated separately by the trend template.
+    #   2. 2 to 6 successive PRICE contractions (pullback from swing high to swing
+    #      low), each one SHALLOWER than the prior. Typical footprint:
+    #      e.g., 25% -> 15% -> 8%.
+    #   3. Volume DRIES UP in the final/tightest contraction (lower avg volume
+    #      than the base average).
+    #   4. Base duration typically 3 to 65 weeks (we require >= 5 weeks of data
+    #      for the analysis to be meaningful).
+    #   5. The PIVOT is the most recent swing high — breakout above pivot on
+    #      volume confirms the setup.
+    #
+    # Algorithm overview:
+    #   - Take last ~75 trading days (~15 weeks) of price/volume.
+    #   - Anchor the base at the highest swing-high in the window.
+    #   - Walk forward from the anchor, alternately finding swing lows and swing
+    #     highs using a fractal (3-bar) peak/trough detector.
+    #   - Each (swing_high -> next swing_low) is one contraction. Depth =
+    #     (swing_high - swing_low) / swing_high * 100.
+    #   - Require >= 2 contractions and STRICTLY monotonically decreasing depth.
+    #   - Final contraction should be tight (default <= 15%, usually <= 10%).
+    #   - Volume dry-up: avg volume during the final contraction segment <
+    #     0.85x the base average volume.
+    # ---------------------------------------------------------------------------
+    def _detect_vcp_pattern(
+        self,
+        data: pd.DataFrame,
+        lookback_days: int = 75,
+        min_base_days: int = 25,
+        fractal_window: int = 3,
+        max_final_contraction_pct: float = 15.0,
+        volume_dryup_ratio: float = 0.85,
+    ) -> Dict:
         """
-        Detect Volatility Contraction Pattern (VCP) in the most recent price action.
-        
-        VCP is characterized by:
-        - 2+ contraction legs (periods of declining volatility)
-        - Each leg shows price tightening (daily range contracting)
-        
-        Returns dict with:
-        - vcp_detected: bool
-        - vcp_low: lowest price in the lookback period (actual recent low)
-        - legs: number of contraction legs found
-        - contraction_pct: % contraction from high
+        Detect Minervini-style VCP in the most recent price action.
+
+        Returns dict with the fields used to populate StockAnalysis.vcp_*.
+        Fails open (returns vcp_detected=False) on any error or insufficient data.
         """
+        empty = {
+            'vcp_detected': False,
+            'pivot': None,
+            'base_high': None,
+            'low': None,
+            'recent_low': None,
+            'base_depth_pct': None,
+            'legs': 0,
+            'contractions': None,
+            'final_contraction_pct': None,
+            'volume_dryup': False,
+            'base_length_days': 0,
+            'breakout': False,
+        }
+
         try:
-            # Use last N days of data for VCP detection
-            recent_data = data.iloc[-lookback_days:].copy()
-            
-            if len(recent_data) < 10:
-                return {'vcp_detected': False, 'vcp_low': None, 'legs': 0, 'contraction_pct': None}
-            
-            # VCP Low = actual lowest price in the lookback period
-            vcp_low = float(recent_data['Low'].min())
-            
-            # Calculate daily range as percentage of close
-            daily_range = (recent_data['High'] - recent_data['Low']) / recent_data['Close'] * 100
-            
-            # Calculate 5-day rolling average of range to smooth noise
-            range_smooth = daily_range.rolling(window=5, min_periods=3).mean()
-            
-            # Find local minima in the smoothed range (contraction points)
-            min_periods = 5
-            local_mins = []
-            for i in range(min_periods, len(range_smooth) - min_periods):
-                current = range_smooth.iloc[i]
-                if current < range_smooth.iloc[i-1] and current < range_smooth.iloc[i+1]:
-                    local_mins.append((i, current))
-            
-            if len(local_mins) < 2:
-                return {'vcp_detected': False, 'vcp_low': vcp_low, 'legs': 0, 'contraction_pct': None}
-            
-            # Find the two most recent local minima (last contraction leg)
-            last_two_mins = local_mins[-2:]
-            
-            # Get the high of range between these two minima (peak of volatility)
-            start_idx = last_two_mins[0][0]
-            end_idx = last_two_mins[-1][0]
-            
-            if start_idx >= end_idx or end_idx >= len(recent_data):
-                return {'vcp_detected': False, 'vcp_low': vcp_low, 'legs': len(local_mins), 'contraction_pct': None}
-            
-            # Calculate how much the range contracted between the two minima
-            range_high = max(last_two_mins[0][1], last_two_mins[1][1])
-            range_low = min(last_two_mins[0][1], last_two_mins[1][1])
-            
-            if range_high > 0:
-                contraction_pct = ((range_high - range_low) / range_high) * 100
+            if len(data) < min_base_days:
+                return empty
+
+            recent = data.iloc[-lookback_days:].copy().reset_index(drop=True)
+            if len(recent) < min_base_days:
+                return empty
+
+            highs = recent['High'].values.astype(float)
+            lows = recent['Low'].values.astype(float)
+            closes = recent['Close'].values.astype(float)
+            volumes = recent['Volume'].values.astype(float) if 'Volume' in recent.columns else np.zeros(len(recent))
+            n = len(recent)
+
+            # -----------------------------------------------------------------
+            # 1) Anchor the base.
+            #
+            #    Naive approach: take the absolute max High in the window.
+            #    Problem: when a stock has already broken out of its base and
+            #    is making fresh highs RIGHT NOW (e.g., MU mid-rally), the max
+            #    sits at the right edge and leaves no room for contractions to
+            #    have formed — so the detector misses real bases that were
+            #    already broken out of.
+            #
+            #    Better approach: prefer the EARLIEST swing-high in the window
+            #    that is within `proximity_pct` of the absolute max AND has at
+            #    least `min_room` days of price action after it. This catches
+            #    bases that have already broken out, and gives the detector
+            #    room to identify the contraction structure that PRECEDED the
+            #    current breakout.
+            # -----------------------------------------------------------------
+            min_room = 10           # need ~2 weeks of action after base high
+            proximity_pct = 0.08    # candidate must be within 8% of absolute max
+
+            abs_max_idx = int(np.argmax(highs))
+            abs_max = float(highs[abs_max_idx])
+
+            # Find all qualifying swing-high candidates
+            w_anchor = fractal_window
+            candidates: List[int] = []
+            for i in range(w_anchor, n - min_room):
+                lo, hi = max(0, i - w_anchor), min(n, i + w_anchor + 1)
+                if highs[i] == highs[lo:hi].max() and highs[i] >= abs_max * (1 - proximity_pct):
+                    candidates.append(i)
+
+            if candidates:
+                # Take the EARLIEST qualifying candidate so we have the most
+                # room to see contractions form.
+                base_high_idx = candidates[0]
             else:
-                contraction_pct = 0
-            
-            # Require at least 10% contraction to count as VCP
-            vcp_detected = contraction_pct >= 10
-            
+                # Fallback: use absolute max. If it's too close to the edge,
+                # we'll bail below.
+                base_high_idx = abs_max_idx
+
+            base_high = float(highs[base_high_idx])
+
+            # Need enough room AFTER the base high to form contractions
+            if (n - 1 - base_high_idx) < 8:
+                return empty
+
+            # -----------------------------------------------------------------
+            # 2) Fractal swing detection AFTER the base high.
+            #    A swing low at index i: lows[i] is the minimum in
+            #    [i-w, i+w]. Similarly for swing highs.
+            #    We then walk: expect low, then high, then low, then high...
+            # -----------------------------------------------------------------
+            w = fractal_window
+
+            def is_swing_low(i: int) -> bool:
+                lo = max(0, i - w)
+                hi = min(n, i + w + 1)
+                return lows[i] == lows[lo:hi].min()
+
+            def is_swing_high(i: int) -> bool:
+                lo = max(0, i - w)
+                hi = min(n, i + w + 1)
+                return highs[i] == highs[lo:hi].max()
+
+            # Build the alternating pivot sequence starting from base_high_idx
+            # Sequence: [base_high, low1, high1, low2, high2, ...]
+            # Each (prev_high -> next_low) defines a contraction.
+            pivots: List[Tuple[int, float, str]] = [(base_high_idx, base_high, 'H')]
+            expect = 'L'
+            i = base_high_idx + 1
+            while i < n - w:
+                if expect == 'L' and is_swing_low(i):
+                    # Must be strictly below the previous pivot's price
+                    if lows[i] < pivots[-1][1]:
+                        pivots.append((i, float(lows[i]), 'L'))
+                        expect = 'H'
+                        i += w  # skip ahead to avoid double-counting
+                        continue
+                elif expect == 'H' and is_swing_high(i):
+                    # Must be strictly above the previous swing low
+                    if highs[i] > pivots[-1][1]:
+                        pivots.append((i, float(highs[i]), 'H'))
+                        expect = 'L'
+                        i += w
+                        continue
+                i += 1
+
+            # Always treat today's close as the "current" leg endpoint so an
+            # in-progress final contraction is captured even without a confirmed
+            # fractal swing low yet.
+            last_idx = n - 1
+            if pivots[-1][2] == 'H' and last_idx > pivots[-1][0]:
+                # Currently pulling back from the last swing high
+                running_low_offset = int(np.argmin(lows[pivots[-1][0] + 1:last_idx + 1]))
+                running_low_idx = pivots[-1][0] + 1 + running_low_offset
+                if lows[running_low_idx] < pivots[-1][1]:
+                    pivots.append((running_low_idx, float(lows[running_low_idx]), 'L'))
+
+            # -----------------------------------------------------------------
+            # 3) Compute contraction depths (swing_high -> next swing_low).
+            # -----------------------------------------------------------------
+            contractions: List[float] = []
+            contraction_segments: List[Tuple[int, int]] = []  # (start_idx, end_idx)
+            for j in range(len(pivots) - 1):
+                a_idx, a_px, a_kind = pivots[j]
+                b_idx, b_px, b_kind = pivots[j + 1]
+                if a_kind == 'H' and b_kind == 'L' and a_px > 0:
+                    depth = (a_px - b_px) / a_px * 100.0
+                    contractions.append(round(depth, 2))
+                    contraction_segments.append((a_idx, b_idx))
+
+            # Lowest swing low and pivot point
+            swing_low_pivots = [p for p in pivots if p[2] == 'L']
+            swing_lows = [p[1] for p in swing_low_pivots]
+            swing_highs_after_base = [p[1] for p in pivots[1:] if p[2] == 'H']
+
+            base_low = float(min(swing_lows)) if swing_lows else float(lows[base_high_idx:].min())
+            # Most recent swing low — this is the stop-loss reference point.
+            # A break below this invalidates the current contraction structure.
+            recent_low = float(swing_low_pivots[-1][1]) if swing_low_pivots else base_low
+            # Pivot = most recent confirmed swing high after the base high.
+            # If none yet (we only have the base high + pullbacks), pivot = base high.
+            pivot = float(swing_highs_after_base[-1]) if swing_highs_after_base else base_high
+
+            base_depth_pct = (base_high - base_low) / base_high * 100.0 if base_high > 0 else 0.0
+            base_length_days = n - 1 - base_high_idx
+
+            # -----------------------------------------------------------------
+            # 4) Validate VCP structure
+            # -----------------------------------------------------------------
+            # Need at least 2 contractions
+            if len(contractions) < 2:
+                return {
+                    **empty,
+                    'pivot': round(pivot, 2),
+                    'base_high': round(base_high, 2),
+                    'low': round(base_low, 2),
+                    'recent_low': round(recent_low, 2),
+                    'base_depth_pct': round(base_depth_pct, 1),
+                    'legs': len(contractions),
+                    'contractions': contractions or None,
+                    'base_length_days': base_length_days,
+                }
+
+            # Each contraction must be STRICTLY shallower than the prior one
+            monotonic = all(
+                contractions[k] < contractions[k - 1]
+                for k in range(1, len(contractions))
+            )
+
+            final_contraction = contractions[-1]
+            tight_enough = final_contraction <= max_final_contraction_pct
+
+            # First (deepest) contraction should be the largest move — sanity
+            # check: it should be > final_contraction (implied by monotonic).
+            # Minervini also says total base depth typically <= 35% for
+            # quality setups; we soft-cap at 50% to avoid late-stage bases.
+            base_depth_reasonable = base_depth_pct <= 50.0
+
+            # -----------------------------------------------------------------
+            # 5) Volume dry-up check on the final contraction segment.
+            #    Compare avg volume during last contraction vs base average.
+            # -----------------------------------------------------------------
+            volume_dryup = False
+            if len(contraction_segments) > 0 and volumes.sum() > 0:
+                base_vol_avg = float(np.mean(volumes[base_high_idx:])) if base_high_idx < n else 0.0
+                last_start, last_end = contraction_segments[-1]
+                final_seg_vol = volumes[last_start:last_end + 1]
+                if base_vol_avg > 0 and len(final_seg_vol) > 0:
+                    final_vol_avg = float(np.mean(final_seg_vol))
+                    volume_dryup = final_vol_avg < (volume_dryup_ratio * base_vol_avg)
+
+            # -----------------------------------------------------------------
+            # 6) Breakout check: today's close above pivot on above-avg volume.
+            # -----------------------------------------------------------------
+            breakout = False
+            if pivot > 0 and closes[-1] > pivot:
+                if volumes.sum() > 0:
+                    avg_vol_50 = float(np.mean(volumes[-50:])) if n >= 50 else float(np.mean(volumes))
+                    breakout = volumes[-1] > avg_vol_50  # any above-average vol qualifies
+                else:
+                    breakout = True
+
+            vcp_detected = bool(
+                len(contractions) >= 2
+                and monotonic
+                and tight_enough
+                and base_depth_reasonable
+                and base_length_days >= 15   # ~3 weeks min from base high
+            )
+
             return {
                 'vcp_detected': vcp_detected,
-                'vcp_low': vcp_low,
-                'legs': len(local_mins),
-                'contraction_pct': round(contraction_pct, 1) if contraction_pct > 0 else None
+                'pivot': round(pivot, 2),
+                'base_high': round(base_high, 2),
+                'low': round(base_low, 2),
+                'recent_low': round(recent_low, 2),
+                'base_depth_pct': round(base_depth_pct, 1),
+                'legs': len(contractions),
+                'contractions': contractions,
+                'final_contraction_pct': round(final_contraction, 2),
+                'volume_dryup': volume_dryup,
+                'base_length_days': base_length_days,
+                'breakout': breakout,
             }
         except Exception as e:
             logger.debug(f"VCP detection failed: {e}")
-            return {'vcp_detected': False, 'vcp_low': None, 'legs': 0, 'contraction_pct': None}
+            return empty
 
     def _identify_entry_zone(
         self,
@@ -463,8 +685,8 @@ class MinerviniScreener:
             # Calculate 22-day ATR as percentage of price
             atr_pct = self._calculate_atr_pct(hist, period=22)
 
-            # Detect VCP pattern (look back 30 days)
-            vcp_result = self._detect_vcp_pattern(hist, lookback_days=30)
+            # Detect Minervini-style VCP pattern (look back ~15 weeks)
+            vcp_result = self._detect_vcp_pattern(hist, lookback_days=75)
 
             # Raw RS performance (percentile assigned later in find_top_opportunities)
             rs_raw = self._get_rs_raw_performance(sp500_data, hist)
@@ -506,6 +728,12 @@ class MinerviniScreener:
                 ma_data['ma_200_trending_up']
             )
 
+            # Extension check — Minervini's "don't chase extended stocks" rule.
+            # A stock more than ~25% above its 50-day MA is climactic / late-stage.
+            # Buy zone is typically within 5-10% of the 50-MA after a base breakout.
+            pct_from_50ma = ((current_price - ma_data['ma_50']) / ma_data['ma_50']) * 100 if ma_data['ma_50'] else 0.0
+            extended_from_50ma = pct_from_50ma > 25.0
+
             return StockAnalysis(
                 symbol=symbol.upper(),
                 name=info.get('shortName', symbol),
@@ -537,9 +765,20 @@ class MinerviniScreener:
                 entry_price=entry_price,
                 catalyst=catalyst,
                 vcp_pattern_detected=vcp_result['vcp_detected'],
-                vcp_low_price=vcp_result['vcp_low'],
+                vcp_pivot_price=vcp_result['pivot'],
+                vcp_low_price=vcp_result['low'],
+                vcp_recent_low=vcp_result['recent_low'],
+                vcp_base_high=vcp_result['base_high'],
+                vcp_base_depth_pct=vcp_result['base_depth_pct'],
                 vcp_legs=vcp_result['legs'],
-                vcp_contraction_pct=vcp_result['contraction_pct'],
+                vcp_contractions=vcp_result['contractions'],
+                vcp_final_contraction_pct=vcp_result['final_contraction_pct'],
+                vcp_volume_dryup=vcp_result['volume_dryup'],
+                vcp_base_length_days=vcp_result['base_length_days'],
+                vcp_breakout=vcp_result['breakout'],
+                pct_from_50ma=pct_from_50ma,
+                extended_from_50ma=extended_from_50ma,
+                actionable=False,  # set in screen_candidates after template runs
             )
         except Exception as e:
             logger.error(f"Error analyzing {symbol}: {e}")
@@ -612,6 +851,35 @@ class MinerviniScreener:
                 signals.append(f"Exceptional EPS growth ({r.eps_growth * 100:.0f}%)")
             if r.catalyst:
                 signals.append(r.catalyst)
+
+            # Extension / VCP commentary
+            if r.extended_from_50ma:
+                signals.append(
+                    f"⚠️ EXTENDED: {r.pct_from_50ma:+.0f}% above 50-MA — "
+                    "do NOT chase, wait for pullback to 50-MA or new base"
+                )
+            elif r.pct_from_50ma > 15:
+                signals.append(
+                    f"Stretched: {r.pct_from_50ma:+.0f}% above 50-MA — "
+                    "near upper end of buy zone"
+                )
+
+            if r.vcp_pattern_detected:
+                contractions_str = " → ".join(f"{c:.1f}%" for c in (r.vcp_contractions or []))
+                signals.append(
+                    f"VCP: {contractions_str}, pivot ${r.vcp_pivot_price}, "
+                    f"stop ${r.vcp_recent_low}"
+                )
+                if r.vcp_breakout:
+                    signals.append("🚀 BREAKOUT confirmed (price > pivot on volume)")
+                if r.vcp_volume_dryup:
+                    signals.append("Volume dry-up on final leg (Minervini-textbook)")
+
+            # Actionable = passes template AND not climactically extended.
+            # A perfect actionable setup also has a VCP and is near the pivot,
+            # but we keep the threshold loose here so non-VCP stocks near MAs
+            # still show as actionable.
+            r.actionable = bool(passed and not r.extended_from_50ma)
 
             r.signals = signals
 
@@ -792,11 +1060,32 @@ class MinerviniScreener:
         print(f"\n  Trend Score       : {score}/9")
         print(f"  RS Rating         : {result.rs_rating:.0f} (intra-{index} percentile)")
         print(f"  Fundamental Score : {result.fundamental_score}/4 (EPS+, EPS gr, rev gr, accel)")
+        print(f"  % from 50-MA      : {result.pct_from_50ma:+.1f}%   "
+              f"{'⚠️ EXTENDED — do not chase' if result.extended_from_50ma else 'OK (within buy zone)'}")
+        print(f"  22-day ATR%       : {result.atr_pct:.2f}%")
+
+        # VCP block
+        if result.vcp_pattern_detected:
+            contractions = " → ".join(f"{c:.1f}%" for c in (result.vcp_contractions or []))
+            print(f"\n  --- VCP DETECTED ---")
+            print(f"  Base high         : ${result.vcp_base_high}")
+            print(f"  Pivot (buy point) : ${result.vcp_pivot_price}")
+            print(f"  Recent low (stop) : ${result.vcp_recent_low}")
+            print(f"  Base depth        : {result.vcp_base_depth_pct}%")
+            print(f"  Contractions      : {contractions}")
+            print(f"  Final contraction : {result.vcp_final_contraction_pct}%")
+            print(f"  Volume dry-up     : {'✅' if result.vcp_volume_dryup else '❌'}")
+            print(f"  Base length       : {result.vcp_base_length_days} days")
+            print(f"  Breakout          : {'🚀 YES' if result.vcp_breakout else 'not yet'}")
+        else:
+            print(f"\n  VCP               : no pattern (extended runaway move, or no base formed)")
+
         if result.next_earnings_date:
-            print(f"  Next Earnings     : {result.next_earnings_date}")
+            print(f"\n  Next Earnings     : {result.next_earnings_date}")
         if result.catalyst:
             print(f"  Catalyst          : {result.catalyst}")
-        print(f"  RESULT            : {'✅ PASSED' if passed else '❌ FAILED'}")
+        print(f"  TEMPLATE          : {'✅ PASSED' if passed else '❌ FAILED'}")
+        print(f"  ACTIONABLE        : {'✅ YES — within buy zone' if result.actionable else '❌ NO — extended or template fail'}")
         print(f"{'='*55}\n")
 
 

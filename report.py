@@ -105,41 +105,112 @@ class ReportGenerator:
                 <tr>
                     <th>Symbol</th>
                     <th>Price</th>
-                    <th>Entry Zone</th>
-                    <th>RS Rating</th>
-                    <th>Trend Score</th>
-                    <th>22-Day ATR %</th>
-                    <th>Next Earnings</th>
-                    <th>VCP Pattern</th>
-                    <th>AI Sentiment</th>
+                    <th>Status</th>
+                    <th>% from<br>50-MA</th>
+                    <th>RS</th>
+                    <th>Trend</th>
+                    <th>ATR%</th>
+                    <th>Earnings</th>
+                    <th>VCP</th>
+                    <th>Pivot<br>(Buy)</th>
+                    <th>Stop<br>(Recent Low)</th>
+                    <th>Contractions</th>
+                    <th>AI</th>
                 </tr>
             """
             for opp in opportunities:
-                entry_zone = opp.entry_zone or "-"
                 earnings = opp.next_earnings_date or "-"
-                vcp_pattern = "✅" if opp.vcp_pattern_detected else "❌"
+
+                # ACTIONABLE STATUS — primary signal for the trader
+                if opp.extended_from_50ma:
+                    status_cell = '<span class="sell">⚠️ EXTENDED<br><small>Do not chase</small></span>'
+                elif opp.actionable:
+                    if opp.vcp_pattern_detected and opp.vcp_breakout:
+                        status_cell = '<span class="optimal">🚀 BREAKOUT<br><small>Buy now</small></span>'
+                    elif opp.vcp_pattern_detected:
+                        status_cell = '<span class="optimal">✅ SETUP<br><small>Wait for pivot</small></span>'
+                    elif opp.pct_from_50ma < 5:
+                        status_cell = '<span class="good">✅ NEAR 50-MA<br><small>Buy zone</small></span>'
+                    else:
+                        status_cell = '<span class="good">✅ ACTIONABLE</span>'
+                else:
+                    status_cell = '<span class="weak">⚠️ Watch only</span>'
+
+                # % from 50-MA cell with color
+                pct_50_value = opp.pct_from_50ma
+                if pct_50_value > 25:
+                    pct_50_cell = f'<span class="sell">{pct_50_value:+.1f}%</span>'
+                elif pct_50_value > 15:
+                    pct_50_cell = f'<span class="weak">{pct_50_value:+.1f}%</span>'
+                else:
+                    pct_50_cell = f'<span class="positive">{pct_50_value:+.1f}%</span>'
+
+                # VCP cell — show ✅ + breakout flag if applicable
+                if opp.vcp_pattern_detected:
+                    if opp.vcp_breakout:
+                        vcp_cell = "✅ 🚀<br><small>Breakout</small>"
+                    else:
+                        vcp_cell = "✅"
+                        if opp.vcp_volume_dryup:
+                            vcp_cell += "<br><small>Vol dry-up</small>"
+                else:
+                    vcp_cell = "—"
+
+                # Pivot price (breakout trigger / buy point)
+                pivot_cell = (
+                    self.format_price(opp.vcp_pivot_price)
+                    if opp.vcp_pivot_price else "-"
+                )
+
+                # Stop-loss = most recent swing low (or 50-MA fallback if no VCP)
+                if opp.vcp_recent_low:
+                    risk_pct = ((opp.price - opp.vcp_recent_low) / opp.price) * 100
+                    stop_cell = (
+                        f"{self.format_price(opp.vcp_recent_low)}"
+                        f"<br><small>-{risk_pct:.1f}% from price</small>"
+                    )
+                else:
+                    # Fallback: suggest 50-MA as stop reference
+                    risk_pct = ((opp.price - opp.ma_50) / opp.price) * 100
+                    stop_cell = (
+                        f"{self.format_price(opp.ma_50)}"
+                        f"<br><small>50-MA, -{risk_pct:.1f}%</small>"
+                    )
+
+                # Contraction footprint (e.g. 18% → 9% → 4%)
+                if opp.vcp_contractions:
+                    contractions_cell = " → ".join(
+                        f"{c:.1f}%" for c in opp.vcp_contractions
+                    )
+                else:
+                    contractions_cell = "-"
+
                 atr_pct = f"{opp.atr_pct:.2f}%" if opp.atr_pct else "-"
                 ai = ai_analysis.get(opp.symbol) if ai_analysis else None
                 if ai and ai.sentiment:
                     sent = ai.sentiment.lower()
                     if sent == "positive":
-                        sentiment = '<span class="sentiment-positive">🟢 Positive</span>'
+                        sentiment = '<span class="sentiment-positive">🟢</span>'
                     elif sent == "negative":
-                        sentiment = '<span class="sentiment-negative">🔴 Negative</span>'
+                        sentiment = '<span class="sentiment-negative">🔴</span>'
                     else:
-                        sentiment = '<span class="sentiment-neutral">🟡 Neutral</span>'
+                        sentiment = '<span class="sentiment-neutral">🟡</span>'
                 else:
                     sentiment = "-"
                 html += f"""
                 <tr>
                     <td><strong>{opp.symbol}</strong><br><small>{opp.name}</small></td>
                     <td>{self.format_price(opp.price)}</td>
-                    <td>{entry_zone}</td>
+                    <td>{status_cell}</td>
+                    <td>{pct_50_cell}</td>
                     <td>{opp.rs_rating:.0f}</td>
                     <td>{opp.trend_score}/9</td>
                     <td>{atr_pct}</td>
                     <td>{earnings}</td>
-                    <td>{vcp_pattern}</td>
+                    <td>{vcp_cell}</td>
+                    <td>{pivot_cell}</td>
+                    <td>{stop_cell}</td>
+                    <td><small>{contractions_cell}</small></td>
                     <td>{sentiment}</td>
                 </tr>
                 """
@@ -150,11 +221,34 @@ class ReportGenerator:
         html += """
             <h2>Understanding the Report</h2>
             <ul>
-                <li><strong>RS Rating:</strong> Weighted relative strength vs S&P 500 (0-100, higher is better)</li>
-                <li><strong>Trend Score:</strong> Minervini template checks passed (0-9)</li>
-                <li><strong>VCP Pattern:</strong> Volatility Contraction Pattern detected (✅ = detected, ❌ = not detected)</li>
-                <li><strong>AI Sentiment:</strong> Sentiment based on earnings and news (🟢 Positive / 🟡 Neutral / 🔴 Negative)</li>
+                <li><strong>Status:</strong> The PRIMARY trading signal:
+                    <ul>
+                        <li><span class="optimal">🚀 BREAKOUT</span> — VCP detected and price has closed above pivot on volume. <strong>Buy now.</strong></li>
+                        <li><span class="optimal">✅ SETUP</span> — Valid VCP forming, wait for pivot break. <strong>Set buy stop at pivot.</strong></li>
+                        <li><span class="good">✅ NEAR 50-MA</span> — Price within 5% of 50-MA after prior breakout. <strong>Classic Minervini pullback entry.</strong></li>
+                        <li><span class="good">✅ ACTIONABLE</span> — Template passes, within buy zone (≤25% above 50-MA).</li>
+                        <li><span class="sell">⚠️ EXTENDED</span> — More than 25% above 50-MA. <strong>Do not chase.</strong> Already-held positions: consider trimming. Wait for a 4+ week base before re-entering.</li>
+                        <li><span class="weak">⚠️ Watch only</span> — Template passes but conditions not yet ideal for entry.</li>
+                    </ul>
+                </li>
+                <li><strong>% from 50-MA:</strong> Distance of current price from the 50-day MA. Minervini's "buy zone" is typically 0-15% above; 15-25% is stretched; &gt;25% is climactic.</li>
+                <li><strong>RS:</strong> Relative strength rating (0-100, higher is better)</li>
+                <li><strong>Trend:</strong> Minervini template checks passed (X/9)</li>
+                <li><strong>VCP:</strong> Volatility Contraction Pattern (✅ = valid VCP, 🚀 = breakout above pivot, "Vol dry-up" = volume contracting on final leg)</li>
+                <li><strong>Pivot (Buy):</strong> Most recent swing high — the breakout trigger / buy point. Enter when price closes above pivot on above-average volume.</li>
+                <li><strong>Stop (Recent Low):</strong> Most recent swing low — your stop-loss level. If no VCP detected, the 50-MA is shown as a reference stop.</li>
+                <li><strong>Contractions:</strong> Sequence of pullback depths (oldest → newest). Valid VCPs show each leg shallower than the last (e.g. 18% → 9% → 4%).</li>
+                <li><strong>AI:</strong> Sentiment based on earnings and news (🟢 Positive / 🟡 Neutral / 🔴 Negative)</li>
             </ul>
+
+            <h2>Minervini Trading Plan</h2>
+            <ol>
+                <li><strong>Only buy ACTIONABLE setups:</strong> Skip anything marked EXTENDED — chasing a stock &gt;25% above its 50-MA is how Minervini-style traders give back gains.</li>
+                <li><strong>Wait for breakout:</strong> For VCP setups, price must close above the <em>Pivot</em> on volume ≥ 1.4× the 50-day average.</li>
+                <li><strong>Enter at pivot:</strong> Buy as close to the pivot as possible — never chase more than 5% above.</li>
+                <li><strong>Set hard stop:</strong> Place stop-loss just below the <em>Recent Low</em> (or 50-MA for non-VCP setups). Max risk per trade = 1-2% of portfolio.</li>
+                <li><strong>Take profits on extended stocks:</strong> When a held position becomes EXTENDED, trim 1/3-1/2 into strength. Re-enter on the next valid base.</li>
+            </ol>
 
             <h2>Minervini Trend Template Criteria (9 Total)</h2>
             <ol>
