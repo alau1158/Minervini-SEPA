@@ -133,7 +133,9 @@ OUTPUT ONLY VALID JSON. NO markdown, NO code blocks, NO explanation:
             print(f"No API key configured for {self.__class__.__name__} - skipping AI analysis")
             return results
 
-        for stock in stocks[:10]:
+        # Cap is set by the caller (report.py passes the desired limit).
+        # No hard cap here — analyze every stock in the list.
+        for stock in stocks:
             stock_data = {
                 "price": getattr(stock, "price", None),
                 "entry_zone": getattr(stock, "entry_zone", None),
@@ -154,7 +156,9 @@ class GeminiAnalyst(BaseAnalyst):
     def __init__(self, api_key: str = None):
         super().__init__()
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        self.model = "gemini-3.1-pro-preview"
+        # Use Flash for cost-efficient sentiment analysis across many stocks.
+        # Pro is overkill for short classification + 2-bullet catalyst extraction.
+        self.model = "gemini-3.1-flash-preview"
 
     def _call_llm(self, prompt: str) -> Optional[str]:
         try:
@@ -183,7 +187,10 @@ class ClaudeAnalyst(BaseAnalyst):
     def __init__(self, api_key: str = None):
         super().__init__()
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
-        self.model = "claude-opus-4-7"
+        # Sonnet is ~5x cheaper than Opus with comparable quality for short
+        # sentiment-classification tasks. Switch to claude-haiku-4-5 for the
+        # cheapest option if running across very large universes.
+        self.model = "claude-sonnet-4-5"
 
     def _call_llm(self, prompt: str) -> Optional[str]:
         try:

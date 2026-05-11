@@ -40,7 +40,7 @@ class ReportGenerator:
         print(f"Generating weekly report for {index_name}...")
 
         print("\n=== Finding top opportunities ===")
-        opportunities = self.screener.find_top_opportunities(minervini_pass_only=True, limit=10, index=index)
+        opportunities = self.screener.find_top_opportunities(minervini_pass_only=True, limit=50, index=index)
 
         # Sort by RS rating (highest first)
         opportunities.sort(key=lambda x: x.rs_rating, reverse=True)
@@ -96,7 +96,13 @@ class ReportGenerator:
                 <p><strong>Top Opportunities:</strong> {len(opportunities)} stocks passing Minervini template</p>
             </div>
 
-            <h2>Top 10 Opportunities (Minervini Pass)</h2>
+            <h2>Top Opportunities (Minervini Pass) — sorted by RS Rating</h2>
+            <p style="color: #7f8c8d; font-size: 13px;">
+                <strong>Reading this report:</strong> Focus on rows with <span class="optimal">✅</span> Status.
+                Skip <span class="sell">⚠️ EXTENDED</span> rows — these are climactic and Minervini's rules
+                say do not chase. Many stocks will pass the trend template but few are actionable today;
+                that is normal and the system is telling you to be patient.
+            </p>
         """
 
         if opportunities:
