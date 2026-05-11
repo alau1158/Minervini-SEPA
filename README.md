@@ -110,36 +110,59 @@ Shares = 0.02($100,000) / ($50)(1.5)(0.025)
        = ~1,066 shares
 ```
 
-## Entry Zones
+## Report Status — What Each Signal Means
 
-The report identifies different entry point types:
+The **Status** column is the primary trading signal. Each stock gets exactly one status, chosen in priority order:
 
-| Zone | Description |
-|------|-------------|
-| **base_breakout** | Price within 5% of 52-week high - stock is at new highs, ready to break out |
-| **tight_consolidation** | Price within 15% of high but >5%, 30%+ above low - consolidating after run-up |
-| **at_50ma_pullback** | Price within 3% of 50-day moving average - buying at support |
-| **at_150ma_pullback** | Price within 3% of 150-day moving average - buying at support |
+| Status | Meaning | Action Today |
+|--------|---------|--------------|
+| 🚀 **BREAKOUT** | VCP detected and price has just closed above the pivot on above-average volume | **Buy now** — as close to pivot as possible (≤5% above) |
+| ✅ **SETUP** | Valid VCP forming, price hasn't broken pivot yet | **Wait** — place a buy stop at the pivot price |
+| ✅ **NEAR 50-MA** | No active VCP, but price is within 5% of a rising 50-MA | **Watch for bounce** — classic Minervini pullback entry, but wait for a confirmation bar (green day off the 50-MA, ideally on rising volume) |
+| ✅ **ACTIONABLE** | Template passes, 5–25% above 50-MA, no specific VCP or pullback trigger | **Nothing today** — add to watchlist; wait for a pullback or base to form |
+| ⚠️ **EXTENDED** | Price is >25% above the 50-MA (climactic territory) | **Do not chase.** If already held: trim 1/3–1/2 into strength. Wait for a new 4–6+ week base before re-entry |
+| ⚠️ **Watch only** | Template did not fully pass | **Nothing** — re-check next week |
 
-**Best Setup:** base_breakout with VCP Pattern ✅ (confirmed strength + volatility contraction)
+The two highest-conviction signals are **BREAKOUT** and **SETUP** — both require a valid VCP.
+
+### What "wait for pivot break / set buy stop at pivot" means
+
+- The **pivot** is the high of the most recent tight consolidation on the right side of a VCP base — the resistance the stock must clear to confirm the breakout.
+- A **buy stop** is an order that triggers a buy automatically when price rises *through* a specified level (the opposite of a sell stop). Set it slightly above the pivot (e.g., pivot + $0.05) so the trade executes mechanically the moment the breakout happens — no need to watch the screen.
+- Most brokers support **buy stop limit** orders, which also cap the price you'll pay if the stock gaps up violently.
 
 ## VCP Pattern (Volatility Contraction Pattern)
 
-VCP is a key Minervini concept where stock price consolidates with declining volatility before breakout.
+A VCP is Minervini's preferred base — price consolidates in a series of progressively tighter pullbacks before breaking out.
 
-- **Detection:** Looks for 2+ contraction legs in last 30 days with 10%+ volatility contraction
-- **✅ = detected** - Stock is in/fresh out of consolidation (Stage 2)
-- **❌ = not detected** - Stock may be in Stage 3 breakout or no clear pattern
+- **Detection:** 2+ contraction legs, each shallower than the last (e.g., 18% → 9% → 4%)
+- **Volume dry-up:** Ideally volume contracts on the final leg, signaling supply exhaustion
+- **Pivot:** Most recent swing high — the breakout trigger / buy point
+- **Stop:** Most recent swing low — your hard stop-loss level
 
-## Report Output
+## Minervini Trading Plan (in priority order)
 
-Reports include:
-- **Symbol, Price, Entry Zone** - Stock info with suggested entry points
-- **RS Rating** - Weighted relative strength vs index (0-100)
-- **Trend Score** - Number of Minervini criteria passed (0-9)
-- **22-Day ATR %** - Volatility measure for position sizing
-- **Next Earnings** - Upcoming earnings date
-- **VCP Pattern** - Volatility Contraction Pattern detected (✅ = detected, ❌ = not detected)
+1. **Only buy ACTIONABLE setups.** Skip anything marked EXTENDED — chasing >25% above the 50-MA is how Minervini-style traders give back gains.
+2. **Wait for breakout.** For VCP setups, price must close above the pivot on volume ≥ 1.4× the 50-day average.
+3. **Enter at pivot.** Buy as close to the pivot as possible — never chase more than 5% above.
+4. **Set a hard stop.** Place stop-loss just below the recent swing low (or 50-MA for non-VCP setups). Max risk per trade = 1–2% of portfolio.
+5. **Take profits on extended stocks.** When a held position becomes EXTENDED, trim 1/3–1/2 into strength. Re-enter on the next valid base.
+
+## Report Columns
+
+| Column | Description |
+|--------|-------------|
+| **Status** | Primary trading signal (see table above) |
+| **% from 50-MA** | Distance from 50-day MA. Buy zone: 0–15%; stretched: 15–25%; climactic: >25% |
+| **RS** | Relative strength rating, 0–100 (template requires ≥80) |
+| **Trend** | Minervini template criteria passed, X/9 |
+| **22-Day ATR%** | Volatility measure for position sizing |
+| **Next Earnings** | Upcoming earnings date |
+| **VCP** | ✅ = valid VCP, 🚀 = breakout above pivot, "Vol dry-up" = volume contracting on final leg |
+| **Pivot (Buy)** | Most recent swing high — set your buy stop here |
+| **Stop (Recent Low)** | Most recent swing low — set your stop-loss just below this |
+| **Contractions** | Sequence of pullback depths, oldest → newest |
+| **AI** | LLM sentiment from recent news & earnings: 🟢 Positive / 🟡 Neutral / 🔴 Negative |
 
 ## Files
 
