@@ -900,18 +900,32 @@ class MinerviniScreener:
         return results
 
     # ---------------------------------------------------------------------------
+    # Helper: pick the constituents table from a Wikipedia page.
+    # Wikipedia occasionally adds intro/header tables that shift the index,
+    # so we scan for the first table that has a flat 'Symbol' column.
+    # ---------------------------------------------------------------------------
+    def _extract_symbols_from_wiki(self, url: str) -> List[str]:
+        import requests
+        from io import StringIO
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, timeout=15, headers=headers)
+        dfs = pd.read_html(StringIO(response.text))
+        for df in dfs:
+            # Skip MultiIndex columns (those are the "changes" tables)
+            if any(isinstance(c, tuple) for c in df.columns):
+                continue
+            if 'Symbol' in df.columns and len(df) >= 100:
+                return df['Symbol'].astype(str).str.replace('.', '-', regex=False).tolist()
+        raise ValueError(f"No constituents table with 'Symbol' column found at {url}")
+
+    # ---------------------------------------------------------------------------
     # S&P 500 symbol list helper
     # ---------------------------------------------------------------------------
     def _get_sp500_symbols(self) -> List[str]:
         try:
-            import requests
-            from io import StringIO
-            url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-            headers = {'User-Agent': 'Mozilla/5.0'}
-            response = requests.get(url, timeout=10, headers=headers)
-            dfs = pd.read_html(StringIO(response.text))
-            symbols = dfs[0]['Symbol'].str.replace('.', '-', regex=False).tolist()
-            return symbols
+            return self._extract_symbols_from_wiki(
+                "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+            )
         except Exception as e:
             logger.warning(f"Failed to fetch S&P 500 list: {e}, using fallback")
             return [
@@ -926,14 +940,9 @@ class MinerviniScreener:
     # ---------------------------------------------------------------------------
     def _get_sp400_symbols(self) -> List[str]:
         try:
-            import requests
-            from io import StringIO
-            url = "https://en.wikipedia.org/wiki/List_of_S%26P_400_companies"
-            headers = {'User-Agent': 'Mozilla/5.0'}
-            response = requests.get(url, timeout=10, headers=headers)
-            dfs = pd.read_html(StringIO(response.text))
-            symbols = dfs[0]['Symbol'].str.replace('.', '-', regex=False).tolist()
-            return symbols
+            return self._extract_symbols_from_wiki(
+                "https://en.wikipedia.org/wiki/List_of_S%26P_400_companies"
+            )
         except Exception as e:
             logger.warning(f"Failed to fetch S&P 400 list: {e}, using fallback")
             return []
@@ -943,14 +952,9 @@ class MinerviniScreener:
     # ---------------------------------------------------------------------------
     def _get_sp600_symbols(self) -> List[str]:
         try:
-            import requests
-            from io import StringIO
-            url = "https://en.wikipedia.org/wiki/List_of_S%26P_600_companies"
-            headers = {'User-Agent': 'Mozilla/5.0'}
-            response = requests.get(url, timeout=10, headers=headers)
-            dfs = pd.read_html(StringIO(response.text))
-            symbols = dfs[0]['Symbol'].str.replace('.', '-', regex=False).tolist()
-            return symbols
+            return self._extract_symbols_from_wiki(
+                "https://en.wikipedia.org/wiki/List_of_S%26P_600_companies"
+            )
         except Exception as e:
             logger.warning(f"Failed to fetch S&P 600 list: {e}, using fallback")
             return []
