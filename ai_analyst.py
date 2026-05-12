@@ -158,7 +158,7 @@ class GeminiAnalyst(BaseAnalyst):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         # Use Flash for cost-efficient sentiment analysis across many stocks.
         # Pro is overkill for short classification + 2-bullet catalyst extraction.
-        self.model = "gemini-3.1-flash-preview"
+        self.model = "gemini-2.5-flash"
 
     def _call_llm(self, prompt: str) -> Optional[str]:
         try:
