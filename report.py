@@ -205,7 +205,7 @@ class ReportGenerator:
                     sentiment = "-"
                 html += f"""
                 <tr>
-                    <td><strong>{opp.symbol}</strong><br><small>{opp.name}</small></td>
+                    <td><a href="https://www.tradingview.com/chart/?symbol={opp.symbol}" style="color: inherit; text-decoration: none;"><strong>{opp.symbol}</strong></a><br><small>{opp.name}</small></td>
                     <td>{self.format_price(opp.price)}</td>
                     <td>{status_cell}</td>
                     <td>{pct_50_cell}</td>
