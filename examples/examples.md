@@ -96,6 +96,77 @@ Is the VCP entry signal around the marked date in March?
 
 ---
 
+# CENX (Century Aluminum) — VCP Analysis Example
+
+![CENX](cenx.png)
+
+---
+
+## Overview
+
+Century Aluminum (CENX) is a textbook example of a **multi-cycle VCP stock** in a sustained Stage 2 uptrend. The chart (Aug 2025 – May 2026, daily) shows multiple successful VCP formations and breakouts stair-stepping higher, with a new base currently forming.
+
+---
+
+## VCP Cycles
+
+### Cycle 1 — November Breakout
+- Large volume surge in November launched the stock from ~$18 to ~$30+
+- Classic Stage 2 initiation move — all moving averages begin stacking bullishly
+
+### Cycle 2 — VCP Jan to Late March → Breakout Mid-April
+- After the Nov/Dec run, stock consolidates January through March
+- Contracting corrections visible as price tightens along the rising 20/50 SMA
+- Volume dries up through the base
+- Breakout fires late March / early April on expanding volume
+- Stock advances from ~$47 to ~$68–70 area
+
+### Cycle 3 — Currently Forming (Mid-April to May 2026)
+- After the April run to ~$68–70, stock pulls back into a new consolidation
+- Price compressing in the ~$58–65 range
+- 20 SMA curling up and catching up to price
+- Volume visibly quieting down in May — constructive behavior
+- **No breakout yet — VCP still forming**
+
+---
+
+## Current Setup Checklist
+
+| VCP Element | Status |
+|---|---|
+| Stage 2 uptrend | ✅ Firmly intact — all SMAs stacked and rising |
+| Prior advance | ✅ Multiple successful breakouts confirm institutional sponsorship |
+| Corrections contracting | 🔄 Still forming — needs one more tightening |
+| Volume drying up | ✅ Visibly quieting in May |
+| Tight pivot / handle | 🔄 Not yet — needs more compression |
+| Breakout trigger | ❌ Not yet fired |
+
+---
+
+## What to Watch For
+
+- Price tightening into a **narrow range (ideally within 5–8% of pivot high)** on minimal volume over the next 1–2 weeks
+- Breakout above **~$65–68** on a meaningful surge in volume
+- That volume expansion on the breakout day = the SEPA entry trigger
+
+**Until those conditions are met — watchlist only. Do not anticipate.**
+
+---
+
+## Why This Stock Is "Acting Right" (Minervini)
+
+- Each base is **higher than the last** — perfect stair-step structure
+- Pullbacks are getting **shallower** relative to each prior advance
+- Rising 50 and 100 SMA providing dynamic support on every dip
+- Volume contracts during bases, expands on breakouts — ideal institutional footprint
+
+---
+
+## Conclusion
+
+CENX is a strong **watchlist candidate** under Minervini's SEPA methodology. The stock has demonstrated repeated ability to form clean bases and break out successfully. The current sideways consolidation (mid-April to present) has the early characteristics of a new VCP forming. **No entry until the pivot breakout fires on volume.**
+
+---
 ## Key VCP / SEPA Principles (Reference)
 
 1. **Stage 2 uptrend required** — stock must be above key moving averages and trending up
