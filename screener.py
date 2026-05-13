@@ -62,6 +62,10 @@ class StockAnalysis:
     pct_from_50ma: float = 0.0                     # % distance from 50-day MA
     extended_from_50ma: bool = False               # > 25% above 50-MA = climax/sell zone
     actionable: bool = False                       # passes template AND not extended AND has VCP
+    # Volume analysis for entry confirmation
+    avg_volume_50: float = 0.0                     # 50-day average volume
+    prev_day_volume: float = 0.0                   # Previous day's volume
+    volume_ratio: float = 0.0                      # prev_day_volume / avg_volume_50
 
 
 class MinerviniScreener:
@@ -685,6 +689,11 @@ class MinerviniScreener:
             # Calculate 22-day ATR as percentage of price
             atr_pct = self._calculate_atr_pct(hist, period=22)
 
+            # Volume analysis for entry confirmation (Minervini requires volume spike at breakout)
+            avg_volume_50 = float(hist['Volume'].iloc[-50:].mean()) if len(hist) >= 50 else float(hist['Volume'].mean())
+            prev_day_volume = float(hist['Volume'].iloc[-2]) if len(hist) >= 2 else 0.0
+            volume_ratio = prev_day_volume / avg_volume_50 if avg_volume_50 > 0 else 0.0
+
             # Detect Minervini-style VCP pattern (look back ~15 weeks)
             vcp_result = self._detect_vcp_pattern(hist, lookback_days=75)
 
@@ -779,6 +788,9 @@ class MinerviniScreener:
                 pct_from_50ma=pct_from_50ma,
                 extended_from_50ma=extended_from_50ma,
                 actionable=False,  # set in screen_candidates after template runs
+                avg_volume_50=avg_volume_50,
+                prev_day_volume=prev_day_volume,
+                volume_ratio=volume_ratio,
             )
         except Exception as e:
             logger.error(f"Error analyzing {symbol}: {e}")

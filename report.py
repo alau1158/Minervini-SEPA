@@ -121,6 +121,7 @@ class ReportGenerator:
                     <th>Pivot<br>(Buy)</th>
                     <th>Stop<br>(Recent Low)</th>
                     <th>Contractions</th>
+                    <th>Vol</th>
                     <th>AI</th>
                 </tr>
             """
@@ -191,6 +192,26 @@ class ReportGenerator:
                 else:
                     contractions_cell = "-"
 
+                # Volume check: Minervini requires volume spike at breakout
+                # SETUP: need 1.4x+ the 50-day avg, NEAR 50-MA: need 1.5x+
+                vol_ratio = opp.volume_ratio if opp.volume_ratio else 0.0
+                is_setup = opp.vcp_pattern_detected and not opp.vcp_breakout and not opp.extended_from_50ma
+                is_near_50ma = opp.actionable and not opp.vcp_pattern_detected and opp.pct_from_50ma < 5
+                if is_setup:
+                    if vol_ratio >= 1.4:
+                        vol_cell = '<span class="positive">✅ 1.4x</span>'
+                    else:
+                        vol_cell = '<span class="negative">❌ 1.4x</span>'
+                elif is_near_50ma:
+                    if vol_ratio >= 1.5:
+                        vol_cell = '<span class="positive">✅ 1.5x</span>'
+                    else:
+                        vol_cell = '<span class="negative">❌ 1.5x</span>'
+                elif opp.vcp_breakout:
+                    vol_cell = '<span class="optimal">🚀</span>'
+                else:
+                    vol_cell = "—"
+
                 atr_pct = f"{opp.atr_pct:.2f}%" if opp.atr_pct else "-"
                 ai = ai_analysis.get(opp.symbol) if ai_analysis else None
                 if ai and ai.sentiment:
@@ -217,6 +238,7 @@ class ReportGenerator:
                     <td>{pivot_cell}</td>
                     <td>{stop_cell}</td>
                     <td><small>{contractions_cell}</small></td>
+                    <td>{vol_cell}</td>
                     <td>{sentiment}</td>
                 </tr>
                 """
@@ -244,6 +266,7 @@ class ReportGenerator:
                 <li><strong>Pivot (Buy):</strong> Most recent swing high — the breakout trigger / buy point. Enter when price closes above pivot on above-average volume.</li>
                 <li><strong>Stop (Recent Low):</strong> Most recent swing low — your stop-loss level. If no VCP detected, the 50-MA is shown as a reference stop.</li>
                 <li><strong>Contractions:</strong> Sequence of pullback depths (oldest → newest). Valid VCPs show each leg shallower than the last (e.g. 18% → 9% → 4%).</li>
+                <li><strong>Vol:</strong> Previous day volume vs 50-day average. For SETUP stocks: need ≥1.4× to confirm breakout. For NEAR 50-MA: need ≥1.5× for pullback entry confirmation. ✅ = passes, ❌ = fails.</li>
                 <li><strong>AI:</strong> Sentiment based on earnings and news (🟢 Positive / 🟡 Neutral / 🔴 Negative)</li>
             </ul>
 
