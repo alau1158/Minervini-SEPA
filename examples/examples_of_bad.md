@@ -6,7 +6,7 @@ A study in **compromised setups and pattern disqualification** under Mark Minerv
 
 ## Example 1: TRGP (Targa Resources) — April/May 2026
 
-![TRGP Daily Chart](TRGP.png)
+![TRGP Daily Chart](trgp.png)
 
 ### Overview
 
@@ -64,7 +64,7 @@ Even with Tuesday closing green, Minervini would **not enter Wednesday morning**
 
 ## Example 2: BIIB (Biogen) — May 2026
 
-![BIIB Daily Chart](BIIB.png)
+![BIIB Daily Chart](biib.png)
 
 ### Overview
 
