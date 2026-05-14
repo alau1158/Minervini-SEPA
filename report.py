@@ -307,18 +307,18 @@ class ReportGenerator:
             </ol>
 
             <h2>Position Sizing Formula (Risk Management)</h2>
-            <p><strong>Shares to Buy = 0.02(T) / (E)(1.5)(A)</strong></p>
+            <p><strong>S = (0.02T) / (E × 1.5A)</strong></p>
             <ul>
-                <li><strong>T</strong> = Total portfolio size</li>
+                <li><strong>S</strong> = Number of shares</li>
                 <li><strong>E</strong> = Entry price</li>
-                <li><strong>A</strong> = 22-Day ATR % (as decimal, e.g., 2.5% = 0.025)</li>
+                <li><strong>T</strong> = Total portfolio size</li>
+                <li><strong>A</strong> = ATR % (e.g., 2.5% = 2.5)</li>
             </ul>
-            <p><em>Example: For a $100,000 portfolio, entry at $50, ATR% of 2.5%:<br>
-            Shares = 0.02($100,000) / ($50)(1.5)(0.025) = 2,000 / 1.875 = ~1,066 shares</em></p>
             
             <p style="margin-top: 30px; color: #7f8c8d; font-size: 12px;">
-                This report is generated based on Mark Minervini's stock selection method.
-                Always do your own due diligence before making investment decisions.
+                This report is generated based on Mark Minervini's stock selection method.<br>
+                Always do your own due diligence before making investment decisions.<br>
+                Refer to <a href="https://github.com/alau1158/Minervini-SEPA">https://github.com/alau1158/Minervini-SEPA</a> for more information.
             </p>
         </body>
         </html>
