@@ -57,7 +57,7 @@ class ReportGenerator:
             else:
                 return 5  # Watch only
 
-        opportunities.sort(key=lambda x: (get_status_priority(x), -x.rs_rating))
+        opportunities.sort(key=lambda x: -x.rs_rating)
 
         all_symbols_for_api = [o.symbol for o in opportunities]
         print(f"Fetching earnings and news data for {len(all_symbols_for_api)} symbols...")
