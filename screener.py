@@ -153,9 +153,14 @@ class MinerviniScreener:
     #     with phi = standard normal PDF, T in years, r assumed 0 (close enough
     #     for short-dated options and avoids an extra rate fetch).
     # ---------------------------------------------------------------------------
-    def _calculate_gex(self, ticker: "yf.Ticker", spot: float) -> Dict:
+    def _calculate_gex(self, ticker: "yf.Ticker", spot: float, max_dte_days: int = 7) -> Dict:
         """
-        Compute net dealer Gamma Exposure for the nearest options expiration.
+        Compute net dealer Gamma Exposure for the nearest options expiration
+        that is within `max_dte_days` calendar days from today.
+
+        Stocks whose nearest available expiration is further out than
+        `max_dte_days` return gex=None. This filters out monthly-only chains
+        whose GEX is not useful for short-term VCP breakout traders.
 
         Returns a dict with gex (float | None), expiration (str | None),
         call_oi (int), put_oi (int). Fails open with gex=None on any error.
@@ -169,7 +174,26 @@ class MinerviniScreener:
             if not expirations:
                 return empty
 
-            expiry = expirations[0]
+            now = datetime.now()
+            # Pick the earliest expiration within the DTE window.
+            expiry = None
+            for candidate in expirations:
+                try:
+                    cand_dt = datetime.strptime(candidate, '%Y-%m-%d')
+                except ValueError:
+                    continue
+                dte = (cand_dt - now).days
+                if 0 <= dte <= max_dte_days:
+                    expiry = candidate
+                    break
+                if dte > max_dte_days:
+                    # Expirations are sorted ascending; once we pass the
+                    # window the rest are even further out.
+                    break
+
+            if expiry is None:
+                return empty
+
             chain = ticker.option_chain(expiry)
             calls = chain.calls
             puts = chain.puts
@@ -179,7 +203,6 @@ class MinerviniScreener:
                 exp_dt = datetime.strptime(expiry, '%Y-%m-%d')
             except ValueError:
                 return empty
-            now = datetime.now()
             t_days = max((exp_dt - now).days + 1, 1)  # at least 1 day to avoid div0
             T = t_days / 365.0
 
@@ -222,6 +245,43 @@ class MinerviniScreener:
         except Exception as e:
             logger.debug(f"GEX calculation failed: {e}")
             return empty
+
+    def get_market_gex(self, symbol: str, max_dte_days: int = 7) -> Dict:
+        """
+        Fetch spot price + GEX for a market index ETF (e.g. QQQ, SPY).
+
+        Returns dict with: symbol, price, change_pct, gex, expiration,
+        call_oi, put_oi. Fields are None / 0 on failure (fails open).
+        """
+        result = {
+            'symbol': symbol.upper(),
+            'price': None,
+            'change_pct': None,
+            'gex': None,
+            'expiration': None,
+            'call_oi': 0,
+            'put_oi': 0,
+        }
+        try:
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period='5d')
+            if hist is None or hist.empty:
+                return result
+            price = float(hist['Close'].iloc[-1])
+            result['price'] = price
+            if len(hist) >= 2:
+                prev = float(hist['Close'].iloc[-2])
+                if prev > 0:
+                    result['change_pct'] = (price - prev) / prev * 100.0
+
+            gex_res = self._calculate_gex(ticker, price, max_dte_days=max_dte_days)
+            result['gex'] = gex_res['gex']
+            result['expiration'] = gex_res['expiration']
+            result['call_oi'] = gex_res['call_oi']
+            result['put_oi'] = gex_res['put_oi']
+        except Exception as e:
+            logger.debug(f"get_market_gex failed for {symbol}: {e}")
+        return result
 
     # ---------------------------------------------------------------------------
     # VCP Pattern Detection — Minervini SEPA methodology

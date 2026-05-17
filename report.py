@@ -74,6 +74,57 @@ class ReportGenerator:
         print("\n=== Running AI Analysis ===")
         ai_analysis = get_ai_analysis(opportunities)
 
+        # Market-overview GEX (same DTE window as the stocks below).
+        print("\n=== Fetching market GEX (QQQ + SPY) ===")
+        market_gex = {
+            'QQQ': self.screener.get_market_gex('QQQ', max_dte_days=7),
+            'SPY': self.screener.get_market_gex('SPY', max_dte_days=7),
+        }
+
+        def _market_cell(m: dict) -> str:
+            sym = m.get('symbol', '?')
+            price = m.get('price')
+            change_pct = m.get('change_pct')
+            gex = m.get('gex')
+            expiry = m.get('expiration')
+
+            price_str = f"${price:.2f}" if price is not None else "n/a"
+            if change_pct is None:
+                chg_html = ""
+            elif change_pct >= 0:
+                chg_html = f' <span class="positive">+{change_pct:.2f}%</span>'
+            else:
+                chg_html = f' <span class="negative">{change_pct:.2f}%</span>'
+
+            if gex is None:
+                gex_html = '<span style="color:#7f8c8d;">GEX: n/a (no expiry ≤ 7d)</span>'
+                regime_html = ""
+            else:
+                gex_m = gex / 1e6
+                if gex_m < 0:
+                    gex_html = f'<span class="positive">GEX: -${abs(gex_m):,.1f}M / 1%</span>'
+                    regime_html = ' <span class="positive">(vol-amplifying, favors breakouts)</span>'
+                else:
+                    gex_html = f'<span class="negative">GEX: +${gex_m:,.1f}M / 1%</span>'
+                    regime_html = ' <span class="negative">(vol-suppressing, fades breakouts)</span>'
+                if expiry:
+                    gex_html += f' <small style="color:#7f8c8d;">[{expiry}]</small>'
+
+            return (
+                f'<div style="flex:1; min-width:280px; padding:12px; '
+                f'background:#ffffff; border:1px solid #ddd; border-radius:6px;">'
+                f'<div style="font-size:16px;"><strong>{sym}</strong> {price_str}{chg_html}</div>'
+                f'<div style="margin-top:6px;">{gex_html}{regime_html}</div>'
+                f'</div>'
+            )
+
+        market_banner_html = (
+            '<div style="display:flex; gap:12px; flex-wrap:wrap; margin:0 0 20px 0;">'
+            + _market_cell(market_gex['QQQ'])
+            + _market_cell(market_gex['SPY'])
+            + '</div>'
+        )
+
         html = f"""
         <html>
         <head>
@@ -103,6 +154,14 @@ class ReportGenerator:
         <body>
             <h1>📈 Minervini SEPA - {index_name} - {datetime.now().strftime('%Y-%m-%d')}</h1>
             <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
+
+            <h2 style="border:none; margin-bottom:8px;">Market GEX Overview</h2>
+            <p style="color:#7f8c8d; font-size:12px; margin-top:0;">
+                Same ≤7-day expiration window used for individual stocks below.
+                <span class="positive">Green = negative GEX (good for breakouts)</span>,
+                <span class="negative">red = positive GEX (breakouts may fade)</span>.
+            </p>
+            {market_banner_html}
 
             <div class="summary">
                 <h3>Summary</h3>
@@ -304,7 +363,7 @@ class ReportGenerator:
                 <li><strong>Stop (Recent Low):</strong> Most recent swing low — your stop-loss level. If no VCP detected, the 50-MA is shown as a reference stop.</li>
                 <li><strong>Contractions:</strong> Sequence of pullback depths (oldest → newest). Valid VCPs show each leg shallower than the last (e.g. 18% → 9% → 4%).</li>
                 <li><strong>Vol:</strong> Previous day volume vs 50-day average. For SETUP stocks: need ≥1.4× to confirm breakout. For NEAR 50-MA: need ≥1.5× for pullback entry confirmation. ✅ = passes, ❌ = fails.</li>
-                <li><strong>GEX (per 1%):</strong> Dealer net Gamma Exposure for the nearest options expiry, expressed as $ change in dealer delta per 1% move in spot. Calls treated as dealer-long, puts as dealer-short. <em>Colors reflect the breakout-trader view: green = bullish for VCP entries, red = bearish.</em>
+                <li><strong>GEX (per 1%):</strong> Dealer net Gamma Exposure for the nearest options expiry <strong>within 7 calendar days</strong>, expressed as $ change in dealer delta per 1% move in spot. Stocks whose nearest expiration is further out (e.g. monthly-only chains) show "-" since far-dated GEX is not actionable for short-term breakout trading. Calls treated as dealer-long, puts as dealer-short. <em>Colors reflect the breakout-trader view: green = bullish for VCP entries, red = bearish.</em>
                     <ul>
                         <li><span class="positive">Negative GEX (green)</span> — dealers must buy rallies / sell dips. Vol-amplifying, trending tape. <strong>Favors VCP breakouts and momentum continuation.</strong></li>
                         <li><span class="negative">Positive GEX (red)</span> — dealers must sell rallies / buy dips. Vol-suppressing, mean-reverting tape. <strong>Breakouts tend to fade — be cautious.</strong></li>
