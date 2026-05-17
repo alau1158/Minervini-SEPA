@@ -66,6 +66,11 @@ class StockAnalysis:
     avg_volume_50: float = 0.0                     # 50-day average volume
     prev_day_volume: float = 0.0                   # Previous day's volume
     volume_ratio: float = 0.0                      # prev_day_volume / avg_volume_50
+    # Gamma Exposure (GEX) — dealer positioning indicator from options market
+    gex: Optional[float] = None                    # Net dealer GEX in $ per 1% move (calls + / puts -)
+    gex_expiration: Optional[str] = None           # Expiration used for GEX calculation
+    gex_call_oi: int = 0                           # Total call open interest for that expiration
+    gex_put_oi: int = 0                            # Total put open interest for that expiration
 
 
 class MinerviniScreener:
@@ -121,6 +126,102 @@ class MinerviniScreener:
             return float((atr / current_price) * 100)
         except Exception:
             return 0.0
+
+    # ---------------------------------------------------------------------------
+    # Gamma Exposure (GEX)
+    # ---------------------------------------------------------------------------
+    #
+    # GEX measures the aggregate dealer gamma position implied by open options
+    # contracts. Standard dealer-positioning convention:
+    #   - Dealers are assumed LONG calls (customer sells calls to dealer) and
+    #     SHORT puts (customer buys puts from dealer). This is the common
+    #     SqueezeMetrics / SpotGamma convention.
+    #   - Per-contract gamma exposure (in $ per 1% spot move):
+    #         GEX_i = gamma_i * OI_i * 100 * spot^2 * 0.01
+    #     where 100 = contract multiplier and 0.01 converts to "per 1% move".
+    #   - Net GEX = sum(call GEX) - sum(put GEX).
+    #
+    # Positive GEX => dealers must SELL into rallies / BUY dips (vol-suppressing,
+    # mean-reverting tape). Negative GEX => dealers must BUY into rallies /
+    # SELL into dips (vol-amplifying, trending tape).
+    #
+    # Implementation notes:
+    #   - We use the NEAREST expiration only (fastest, captures short-term flow).
+    #   - We use yfinance's reported impliedVolatility column directly.
+    #   - We compute gamma via Black-Scholes:
+    #         gamma = phi(d1) / (S * sigma * sqrt(T))
+    #     with phi = standard normal PDF, T in years, r assumed 0 (close enough
+    #     for short-dated options and avoids an extra rate fetch).
+    # ---------------------------------------------------------------------------
+    def _calculate_gex(self, ticker: "yf.Ticker", spot: float) -> Dict:
+        """
+        Compute net dealer Gamma Exposure for the nearest options expiration.
+
+        Returns a dict with gex (float | None), expiration (str | None),
+        call_oi (int), put_oi (int). Fails open with gex=None on any error.
+        """
+        empty = {'gex': None, 'expiration': None, 'call_oi': 0, 'put_oi': 0}
+        try:
+            from scipy.stats import norm
+            import math
+
+            expirations = ticker.options or []
+            if not expirations:
+                return empty
+
+            expiry = expirations[0]
+            chain = ticker.option_chain(expiry)
+            calls = chain.calls
+            puts = chain.puts
+
+            # Time to expiration in years (use end of expiration day)
+            try:
+                exp_dt = datetime.strptime(expiry, '%Y-%m-%d')
+            except ValueError:
+                return empty
+            now = datetime.now()
+            t_days = max((exp_dt - now).days + 1, 1)  # at least 1 day to avoid div0
+            T = t_days / 365.0
+
+            if spot <= 0 or T <= 0:
+                return empty
+
+            def leg_gex(df: pd.DataFrame, sign: float) -> Tuple[float, int]:
+                if df is None or df.empty:
+                    return 0.0, 0
+                total = 0.0
+                oi_sum = 0
+                for _, row in df.iterrows():
+                    try:
+                        K = float(row.get('strike', 0) or 0)
+                        iv = float(row.get('impliedVolatility', 0) or 0)
+                        oi = int(row.get('openInterest', 0) or 0)
+                        if K <= 0 or iv <= 0 or oi <= 0:
+                            continue
+                        # Black-Scholes gamma, r = 0
+                        d1 = (math.log(spot / K) + 0.5 * iv * iv * T) / (iv * math.sqrt(T))
+                        gamma = norm.pdf(d1) / (spot * iv * math.sqrt(T))
+                        # $ change in dealer delta per 1% spot move
+                        contract_gex = gamma * oi * 100.0 * (spot ** 2) * 0.01
+                        total += sign * contract_gex
+                        oi_sum += oi
+                    except (ValueError, TypeError, ZeroDivisionError):
+                        continue
+                return total, oi_sum
+
+            call_gex, call_oi = leg_gex(calls, +1.0)
+            put_gex, put_oi = leg_gex(puts, -1.0)
+            net_gex = call_gex + put_gex
+
+            return {
+                'gex': float(net_gex),
+                'expiration': expiry,
+                'call_oi': int(call_oi),
+                'put_oi': int(put_oi),
+            }
+        except Exception as e:
+            logger.debug(f"GEX calculation failed: {e}")
+            return empty
 
     # ---------------------------------------------------------------------------
     # VCP Pattern Detection — Minervini SEPA methodology
@@ -697,6 +798,13 @@ class MinerviniScreener:
             # Detect Minervini-style VCP pattern (look back ~15 weeks)
             vcp_result = self._detect_vcp_pattern(hist, lookback_days=75)
 
+            # Gamma Exposure (dealer positioning from options market).
+            # Skipped in backtest mode — options chains are live-only via yfinance.
+            if reference_date is None:
+                gex_result = self._calculate_gex(ticker, current_price)
+            else:
+                gex_result = {'gex': None, 'expiration': None, 'call_oi': 0, 'put_oi': 0}
+
             # Raw RS performance (percentile assigned later in find_top_opportunities)
             rs_raw = self._get_rs_raw_performance(sp500_data, hist)
 
@@ -791,6 +899,10 @@ class MinerviniScreener:
                 avg_volume_50=avg_volume_50,
                 prev_day_volume=prev_day_volume,
                 volume_ratio=volume_ratio,
+                gex=gex_result['gex'],
+                gex_expiration=gex_result['expiration'],
+                gex_call_oi=gex_result['call_oi'],
+                gex_put_oi=gex_result['put_oi'],
             )
         except Exception as e:
             logger.error(f"Error analyzing {symbol}: {e}")
@@ -886,6 +998,10 @@ class MinerviniScreener:
                     signals.append("🚀 BREAKOUT confirmed (price > pivot on volume)")
                 if r.vcp_volume_dryup:
                     signals.append("Volume dry-up on final leg (Minervini-textbook)")
+
+            if r.gex is not None:
+                gex_sign = "+" if r.gex >= 0 else ""
+                signals.append(f"GEX: {gex_sign}${r.gex/1e6:,.1f}M per 1% ({r.gex_expiration})")
 
             # Actionable = passes template AND not climactically extended.
             # A perfect actionable setup also has a VCP and is near the pivot,
@@ -1079,6 +1195,15 @@ class MinerviniScreener:
         print(f"  % from 50-MA      : {result.pct_from_50ma:+.1f}%   "
               f"{'⚠️ EXTENDED — do not chase' if result.extended_from_50ma else 'OK (within buy zone)'}")
         print(f"  22-day ATR%       : {result.atr_pct:.2f}%")
+        if result.gex is not None:
+            gex_sign = "+" if result.gex >= 0 else ""
+            gex_regime = "positive (vol-suppressing)" if result.gex >= 0 else "negative (vol-amplifying)"
+            print(f"  GEX               : {gex_sign}${result.gex:,.0f} per 1% move "
+                  f"[{gex_regime}]")
+            print(f"  GEX expiration    : {result.gex_expiration}  "
+                  f"(call OI: {result.gex_call_oi:,}, put OI: {result.gex_put_oi:,})")
+        else:
+            print(f"  GEX               : n/a (no options chain available)")
 
         # VCP block
         if result.vcp_pattern_detected:

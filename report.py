@@ -136,6 +136,7 @@ class ReportGenerator:
                     <th>Stop<br>(Recent Low)</th>
                     <th>Contractions</th>
                     <th>Vol</th>
+                    <th>GEX<br>(per 1%)</th>
                     <th>AI</th>
                 </tr>
             """
@@ -227,6 +228,27 @@ class ReportGenerator:
                     vol_cell = "—"
 
                 atr_pct = f"{opp.atr_pct:.2f}%" if opp.atr_pct else "-"
+
+                # GEX cell — dealer gamma exposure for nearest expiry.
+                # For VCP/breakout traders: NEGATIVE GEX is bullish (dealers chase
+                # price, fueling breakouts), POSITIVE GEX is bearish (dealers fade
+                # price, breakouts stall). Colors reflect breakout-trader view:
+                # green = negative GEX, red = positive GEX.
+                if opp.gex is not None:
+                    gex_m = opp.gex / 1e6  # display in $M
+                    if gex_m < 0:
+                        gex_cell = (
+                            f'<span class="positive">-${abs(gex_m):,.1f}M</span>'
+                            f'<br><small>{opp.gex_expiration or ""}</small>'
+                        )
+                    else:
+                        gex_cell = (
+                            f'<span class="negative">+${gex_m:,.1f}M</span>'
+                            f'<br><small>{opp.gex_expiration or ""}</small>'
+                        )
+                else:
+                    gex_cell = "-"
+
                 ai = ai_analysis.get(opp.symbol) if ai_analysis else None
                 if ai and ai.sentiment:
                     sent = ai.sentiment.lower()
@@ -253,6 +275,7 @@ class ReportGenerator:
                     <td>{stop_cell}</td>
                     <td><small>{contractions_cell}</small></td>
                     <td>{vol_cell}</td>
+                    <td>{gex_cell}</td>
                     <td>{sentiment}</td>
                 </tr>
                 """
@@ -281,6 +304,12 @@ class ReportGenerator:
                 <li><strong>Stop (Recent Low):</strong> Most recent swing low — your stop-loss level. If no VCP detected, the 50-MA is shown as a reference stop.</li>
                 <li><strong>Contractions:</strong> Sequence of pullback depths (oldest → newest). Valid VCPs show each leg shallower than the last (e.g. 18% → 9% → 4%).</li>
                 <li><strong>Vol:</strong> Previous day volume vs 50-day average. For SETUP stocks: need ≥1.4× to confirm breakout. For NEAR 50-MA: need ≥1.5× for pullback entry confirmation. ✅ = passes, ❌ = fails.</li>
+                <li><strong>GEX (per 1%):</strong> Dealer net Gamma Exposure for the nearest options expiry, expressed as $ change in dealer delta per 1% move in spot. Calls treated as dealer-long, puts as dealer-short. <em>Colors reflect the breakout-trader view: green = bullish for VCP entries, red = bearish.</em>
+                    <ul>
+                        <li><span class="positive">Negative GEX (green)</span> — dealers must buy rallies / sell dips. Vol-amplifying, trending tape. <strong>Favors VCP breakouts and momentum continuation.</strong></li>
+                        <li><span class="negative">Positive GEX (red)</span> — dealers must sell rallies / buy dips. Vol-suppressing, mean-reverting tape. <strong>Breakouts tend to fade — be cautious.</strong></li>
+                    </ul>
+                </li>
                 <li><strong>AI:</strong> Sentiment based on earnings and news (🟢 Positive / 🟡 Neutral / 🔴 Negative)</li>
             </ul>
 
