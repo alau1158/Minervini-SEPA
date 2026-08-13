@@ -279,3 +279,8 @@ Both stocks show **+~3% from 50-MA** and a green status, but they are **opposite
 ## Disclaimer
 
 This is for informational purposes only. Always do your own research before investing.
+
+
+---
+
+> **ARCHIVED** — superseded by [alau1158/sepa](https://github.com/alau1158/sepa). See its legacy/ folder for this code.
